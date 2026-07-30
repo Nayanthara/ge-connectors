@@ -1,0 +1,10 @@
+{
+  "gcp_project": "my-gcp-project-id",
+  "location": "global",
+  "instance_uri": "https://my.sharepoint.com",
+  "entra_tenant_id": "00000000-0000-0000-0000-000000000000",
+  "existing_client_id": null,
+  "cmek_kms_key": null,
+  "engine_id": "my-gemini-engine-id",
+  "datastore_id": "sharepoint-federated-ds"
+}
