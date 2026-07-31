@@ -23,7 +23,7 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
 
   @property
   def connector_type(self) -> str:
-    return "sharepoint_federated"
+    return "sharepoint_federated_search"
 
   def prompt_config_interactive(
       self, defaults: typing.Dict[str, typing.Any]
@@ -50,15 +50,18 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
         input("Enter GCP Location [default: global]: ").strip() or "global"
     )
 
-    # 3. SharePoint Instance URL
+    # 3. SharePoint Instance URL (Required: Cannot be empty, no default)
     instance_uri = input(
-        "Enter SharePoint Instance URL (e.g. https://acme.sharepoint.com): "
+        "Enter SharePoint Instance URL (REQUIRED, e.g."
+        " https://acme.sharepoint.com): "
     ).strip()
-    while not instance_uri.startswith(
-        "http://"
-    ) and not instance_uri.startswith("https://"):
+    while not instance_uri or not (
+        instance_uri.startswith("http://")
+        or instance_uri.startswith("https://")
+    ):
       instance_uri = input(
-          "Please enter a valid URL starting with https:// : "
+          "SharePoint Instance URL cannot be empty. Please enter a valid URL"
+          " starting with https:// (e.g. https://acme.sharepoint.com): "
       ).strip()
     instance_uri = instance_uri.rstrip("/")
 
@@ -135,13 +138,19 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
     if not config.get("entra_tenant_id"):
       errors.append("Missing required configuration: 'entra_tenant_id'.")
 
-    instance_uri = config.get("instance_uri", "")
-    if not instance_uri or not (
+    instance_uri = (config.get("instance_uri") or "").strip()
+    if not instance_uri:
+      errors.append(
+          "SharePoint Instance URL ('instance_uri') cannot be empty and has no"
+          " default value."
+      )
+    elif not (
         instance_uri.startswith("http://")
         or instance_uri.startswith("https://")
     ):
       errors.append(
-          "Invalid or missing 'instance_uri'. Must start with https://"
+          "Invalid 'instance_uri'. Must start with https:// (e.g."
+          " https://acme.sharepoint.com)"
       )
 
     return errors
@@ -181,8 +190,8 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
             f" {'Automatic Grant (Global Admin Detected)' if is_global_admin else 'Manual Instructions Guidance (Cloud App Admin)'}"
         ),
         (
-            "6. Secret Manager Storage:     Container"
-            " 'sharepoint-federated-oauth-secret'"
+            "6. Secret Manager Storage: Container"
+            f" '{config.get('datastore_id', 'sharepoint-federated-ds')}-oauth-secret'"
         ),
         (
             "7. Encryption Key Mode:       "
@@ -216,7 +225,7 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
       return {
           "client_id": "DRY_RUN_CLIENT_ID",
           "secret_path": (
-              f"projects/{project_id}/secrets/sharepoint-federated-oauth-secret/versions/latest"
+              f"projects/{project_id}/secrets/{datastore_id}-oauth-secret/versions/latest"
           ),
           "datastore_id": datastore_id,
           "admin_consent_granted": is_global_admin,
@@ -226,7 +235,7 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
     self.gcp_provider.enable_apis(project_id)
 
     # 2. Entra ID App Registration & Permissions
-    app_name = "Gemini-Enterprise-SharePoint-Federated"
+    app_name = f"Gemini-Enterprise-SharePoint-{datastore_id}"
     client_id, _is_new = (  # pylint: disable=unused-variable
         self.entra_provider.get_or_create_app_registration(
             app_name=app_name,
@@ -246,7 +255,7 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
     )
 
     # 4. Vault Secret in Secret Manager
-    secret_id = "sharepoint-federated-oauth-secret"
+    secret_id = f"{datastore_id}-oauth-secret"
     secret_path = self.gcp_provider.store_secret(
         project_id=project_id,
         secret_id=secret_id,
@@ -262,6 +271,7 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
             location=location,
             datastore_id=datastore_id,
             client_id=client_id,
+            client_secret=client_secret,
             tenant_id=tenant_id,
             instance_uri=instance_uri,
         )

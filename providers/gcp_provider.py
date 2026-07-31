@@ -13,6 +13,7 @@ import subprocess
 import time
 import typing
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -65,7 +66,12 @@ class GcpProvider:
       return
 
     self.logger.info(
-        "Enabling required GCP APIs on project '%s'...", project_id
+        "Configuring gcloud quota project and enabling required GCP APIs on"
+        " project '%s'...",
+        project_id,
+    )
+    self._run_cmd(
+        f"gcloud config set billing/quota_project {project_id}", check=False
     )
     cmd = (
         f"gcloud services enable {' '.join(self.REQUIRED_APIS)}"
@@ -95,6 +101,9 @@ class GcpProvider:
 
     Returns:
         GCP secret version resource name string.
+
+    Raises:
+        RuntimeError: If secret creation fails or permissions are denied.
     """
     secret_path = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
     if dry_run:
@@ -124,7 +133,7 @@ class GcpProvider:
     )
 
     exp_clean = expiration_date.split("T")[0].replace("-", "_")
-    labels = f"expiration_date={exp_clean},connector_type=sharepoint_federated,alert_before_days=30"
+    labels = f"expiration_date={exp_clean},connector_type=sharepoint_federated_search,alert_before_days=30"
 
     if res.returncode != 0:
       self.logger.info(
@@ -134,7 +143,50 @@ class GcpProvider:
           f"gcloud secrets create {secret_id} --project={project_id} "
           f"{cmek_flag} --labels={labels}"
       )
-      self._run_cmd(create_cmd)
+      create_res = self._run_cmd(create_cmd, check=False)
+      if create_res.returncode != 0:
+        if (
+            "IAM_PERMISSION_DENIED" in create_res.stderr
+            or "secretmanager.secrets.create" in create_res.stderr
+        ):
+          self.logger.warning(
+              "Secret creation failed due to missing IAM permissions."
+              " Attempting auto-grant of 'roles/secretmanager.editor'..."
+          )
+          gcp_user_res = self._run_cmd(
+              "gcloud config get-value account", check=False
+          )
+          gcp_user = (
+              gcp_user_res.stdout.strip()
+              if gcp_user_res.returncode == 0
+              else ""
+          )
+          if gcp_user:
+            grant_cmd = (
+                f"gcloud projects add-iam-policy-binding {project_id}"
+                f' --member="user:{gcp_user}"'
+                ' --role="roles/secretmanager.editor" --quiet'
+            )
+            grant_res = self._run_cmd(grant_cmd, check=False)
+            if grant_res.returncode == 0:
+              self.logger.info(
+                  "Successfully self-granted 'roles/secretmanager.editor'."
+                  " Retrying secret creation..."
+              )
+              self._run_cmd(create_cmd, check=True)
+            else:
+              raise RuntimeError(
+                  "Permission 'secretmanager.secrets.create' denied on project"
+                  f" '{project_id}'.\n"
+                  f"Please ask a Project IAM Admin to run:\n"
+                  f"  gcloud projects add-iam-policy-binding {project_id}"
+                  f' --member="user:{gcp_user}"'
+                  ' --role="roles/secretmanager.editor"'
+              )
+        else:
+          raise RuntimeError(
+              f"Failed to create secret '{secret_id}': {create_res.stderr}"
+          )
 
       def cleanup_secret():
         self.logger.warning(
@@ -170,17 +222,22 @@ class GcpProvider:
       location: str,
       datastore_id: str,
       client_id: str,
+      client_secret: str,
       tenant_id: str,
       instance_uri: str,
       dry_run: bool = False,
   ) -> typing.Dict[str, typing.Any]:
     """Call Discovery Engine REST API to provision SharePoint Data Store.
 
+    Uses the official setUpDataConnector endpoint as documented in:
+    https://docs.cloud.google.com/gemini/enterprise/docs/connectors/ms-sharepoint/set-up-data-store
+
     Args:
         project_id: GCP Project ID.
-        location: GCP Location (e.g. global).
-        datastore_id: Data Store ID string.
+        location: GCP Location (e.g. global, us, eu).
+        datastore_id: Data Store / Collection ID string.
         client_id: Entra Application Client ID.
+        client_secret: Entra Application Client Secret.
         tenant_id: Entra Tenant ID string.
         instance_uri: SharePoint Instance URL string.
         dry_run: If True, simulates action without modifying state.
@@ -190,25 +247,30 @@ class GcpProvider:
     """
     url = (
         f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
-        f"locations/{location}/collections/default_collection/dataStores?dataStoreId={datastore_id}"
+        f"locations/{location}:setUpDataConnector"
     )
 
     payload = {
-        "displayName": "SharePoint Online Federated",
-        "industryVertical": "GENERIC",
-        "solutionTypes": ["SOLUTION_TYPE_CHAT"],
-        "federatedSearchConfig": {
-            "sharepointConfig": {
-                "clientId": client_id,
-                "tenantId": tenant_id,
-                "instanceUri": instance_uri,
-            }
+        "collectionId": datastore_id,
+        "collectionDisplayName": "SharePoint Online Federated",
+        "dataConnector": {
+            "dataSource": "sharepoint_federated_search",
+            "params": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "instance_uri": instance_uri,
+                "tenant_id": tenant_id,
+            },
+            "entities": [{"entityName": "file"}],
+            "refreshInterval": "7200s",
+            "connectorType": "THIRD_PARTY_FEDERATED",
+            "connectorModes": ["FEDERATED"],
         },
     }
 
     if dry_run:
       self.logger.info(
-          "[DRY-RUN] Would issue POST request to Discovery Engine API for"
+          "[DRY-RUN] Would issue POST request to setUpDataConnector API for"
           " '%s'.",
           datastore_id,
       )
@@ -220,7 +282,8 @@ class GcpProvider:
       }
 
     self.logger.info(
-        "Provisioning Discovery Engine Data Store '%s' via REST API...",
+        "Provisioning Discovery Engine SharePoint Federated Data Store '%s'"
+        " via setUpDataConnector REST API...",
         datastore_id,
     )
     access_token = self.get_access_token()
@@ -231,6 +294,7 @@ class GcpProvider:
         headers={
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
+            "X-Goog-User-Project": project_id,
         },
         method="POST",
     )
@@ -238,7 +302,9 @@ class GcpProvider:
     try:
       with urllib.request.urlopen(req) as resp:
         res_json = json.loads(resp.read().decode("utf-8"))
-        self.logger.info("Discovery Engine API request submitted successfully.")
+        self.logger.info(
+            "setUpDataConnector API request submitted successfully."
+        )
 
         def cleanup_datastore():
           self.logger.warning(
@@ -250,7 +316,10 @@ class GcpProvider:
           )
           del_req = urllib.request.Request(
               del_url,
-              headers={"Authorization": f"Bearer {access_token}"},
+              headers={
+                  "Authorization": f"Bearer {access_token}",
+                  "X-Goog-User-Project": project_id,
+              },
               method="DELETE",
           )
           try:
@@ -262,6 +331,7 @@ class GcpProvider:
             f"Delete Discovery Engine Data Store ({datastore_id})",
             cleanup_datastore,
         )
+
         return res_json
     except urllib.error.HTTPError as e:
       err_msg = e.read().decode("utf-8")
@@ -273,7 +343,7 @@ class GcpProvider:
                 f"collections/default_collection/dataStores/{datastore_id}"
             )
         }
-      self.logger.error("Discovery Engine API Error %d: %s", e.code, err_msg)
+      self.logger.error("setUpDataConnector API Error %d: %s", e.code, err_msg)
       raise e
 
   def bind_data_store_to_engine(
@@ -324,7 +394,10 @@ class GcpProvider:
 
     req = urllib.request.Request(
         url,
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "X-Goog-User-Project": project_id,
+        },
         method="POST",
     )
 
@@ -374,7 +447,12 @@ class GcpProvider:
     )
 
     req = urllib.request.Request(
-        url, headers={"Authorization": f"Bearer {access_token}"}, method="GET"
+        url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "X-Goog-User-Project": project_id,
+        },
+        method="GET",
     )
 
     for attempt in range(1, 7):

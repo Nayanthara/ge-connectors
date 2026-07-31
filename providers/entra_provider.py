@@ -13,9 +13,17 @@ import typing
 class EntraProvider:
   """Service Provider for Microsoft Entra ID operations."""
 
+  GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
   SHAREPOINT_APP_ID = "00000003-0000-0ff1-ce00-000000000000"
-  PERMISSION_SITES_SEARCH_ALL = "3b56c6d6-ee54-4826-8880-35439402e3b2"
-  PERMISSION_ALLSITES_READ = "57ab8481-7910-449e-ae0a-81a1a79f6b98"
+
+  # Microsoft Graph API Permissions
+  PERMISSION_GRAPH_USER_READ = "e1fe6dd8-ba31-4d61-89e7-88639da4683d"
+
+  # Office 365 SharePoint Online API Permissions
+  PERMISSION_SHAREPOINT_SITES_SEARCH_ALL = (
+      "1002502a-9a71-4426-8551-69ab83452fab"
+  )
+  PERMISSION_SHAREPOINT_SITES_READ_ALL = "4e0d77b0-96ba-4398-af14-3baa780278f4"
 
   def __init__(self, logger: logging.Logger, rollback_mgr: typing.Any):
     self.logger = logger
@@ -52,71 +60,44 @@ class EntraProvider:
       self,
       app_name: str,
       redirect_uris: typing.List[str],
-      azure_cloud: str = "AzureCloud",  # pylint: disable=unused-argument
       existing_client_id: typing.Optional[str] = None,
       dry_run: bool = False,
   ) -> typing.Tuple[str, bool]:
-    """Create a new Entra ID App Registration or bind to an existing one.
+    """Provision a new Entra ID App Registration or reuse existing ID.
 
     Args:
-        app_name: Display name for the application.
-        redirect_uris: List of web callback URIs to register.
-        azure_cloud: Target Azure environment (default: AzureCloud).
-        existing_client_id: Optional Client ID of an existing app to re-use.
-        dry_run: If True, simulates action without creating resources.
+        app_name: Display Name for Entra App.
+        redirect_uris: Web redirect URIs list.
+        existing_client_id: Optional existing client ID string.
+        dry_run: If True, simulates action without modifying state.
 
     Returns:
         Tuple of (client_id, is_newly_created).
     """
     if existing_client_id:
-      self.logger.info("Using existing Client ID: %s", existing_client_id)
+      self.logger.info(
+          "Reusing existing Entra Client ID: %s", existing_client_id
+      )
       return existing_client_id, False
 
     if dry_run:
       self.logger.info(
-          "[DRY-RUN] Would search or create Entra App Registration '%s'.",
+          "[DRY-RUN] Would create Entra ID App Registration '%s' with URIs %s.",
           app_name,
+          redirect_uris,
       )
-      return "00000000-0000-0000-0000-000000000000", True
+      return "DRY_RUN_CLIENT_ID", True
 
-    # Check if app already exists by name
-    self.logger.info(
-        "Checking for existing App Registration named '%s'...", app_name
-    )
-    check_cmd = (
-        f'az ad app list --display-name "{app_name}" --query "[0]" -o json'
-    )
-    existing_res = self._run_cmd(check_cmd, check=False)
-
-    if (
-        existing_res.returncode == 0
-        and existing_res.stdout.strip()
-        and existing_res.stdout.strip() != "null"
-    ):
-      app_data = json.loads(existing_res.stdout)
-      client_id = app_data["appId"]
-      self.logger.info(
-          "Found existing App Registration (Client ID: %s).", client_id
-      )
-
-      redirect_str = " ".join(redirect_uris)
-      update_cmd = (
-          f"az ad app update --id {client_id} --web-redirect-uris"
-          f" {redirect_str}"
-      )
-      self._run_cmd(update_cmd)
-      return client_id, False
-
-    # Create new App Registration
-    self.logger.info("Creating new Entra ID App Registration '%s'...", app_name)
-    redirect_str = " ".join(redirect_uris)
+    self.logger.info("Creating Entra ID App Registration '%s'...", app_name)
+    uri_str = " ".join(redirect_uris)
     create_cmd = (
-        f'az ad app create --display-name "{app_name}" '
-        f"--web-redirect-uris {redirect_str} "
-        '--sign-in-audience "AzureADMyOrg" -o json'
+        f"az ad app create --display-name '{app_name}' --web-redirect-uris"
+        f" {uri_str} --sign-in-audience AzureADMyOrg -o json"
     )
-    created_app = json.loads(self._run_cmd(create_cmd).stdout)
-    client_id = created_app["appId"]
+    res = self._run_cmd(create_cmd)
+    app_data = json.loads(res.stdout)
+    client_id = app_data["appId"]
+
     self.logger.info(
         "App Registration created successfully. Client ID: %s", client_id
     )
@@ -141,7 +122,7 @@ class EntraProvider:
   def configure_sharepoint_permissions(
       self, client_id: str, dry_run: bool = False
   ) -> None:
-    """Assign delegated SharePoint API permissions.
+    """Assign delegated SharePoint and Graph permissions to App Registration.
 
     Args:
         client_id: Entra Application Client ID.
@@ -149,20 +130,35 @@ class EntraProvider:
     """
     if dry_run:
       self.logger.info(
-          "[DRY-RUN] Would assign Sites.Search.All and AllSites.Read to %s.",
+          "[DRY-RUN] Would assign SharePoint & Graph delegated permissions to"
+          " %s.",
           client_id,
       )
       return
 
-    self.logger.info("Configuring delegated SharePoint API permissions...")
-    perm_cmd = (
+    self.logger.info(
+        "Configuring delegated Office 365 SharePoint Online & Graph"
+        " permissions..."
+    )
+    # Add Office 365 SharePoint Online API Permissions
+    spo_perm_cmd = (
         f"az ad app permission add --id {client_id} --api"
         f" {self.SHAREPOINT_APP_ID} --api-permissions"
-        f" {self.PERMISSION_SITES_SEARCH_ALL}=Scope"
-        f" {self.PERMISSION_ALLSITES_READ}=Scope"
+        f" {self.PERMISSION_SHAREPOINT_SITES_SEARCH_ALL}=Scope"
+        f" {self.PERMISSION_SHAREPOINT_SITES_READ_ALL}=Scope"
     )
-    self._run_cmd(perm_cmd, check=False)
-    self.logger.info("SharePoint delegated API permissions added.")
+    self._run_cmd(spo_perm_cmd, check=False)
+
+    # Add Microsoft Graph API Permissions (User.Read)
+    graph_perm_cmd = (
+        f"az ad app permission add --id {client_id} --api"
+        f" {self.GRAPH_APP_ID} --api-permissions"
+        f" {self.PERMISSION_GRAPH_USER_READ}=Scope"
+    )
+    self._run_cmd(graph_perm_cmd, check=False)
+    self.logger.info(
+        "Delegated SharePoint & Graph permissions added successfully."
+    )
 
   def handle_admin_consent(
       self, client_id: str, is_global_admin: bool, dry_run: bool = False
@@ -191,14 +187,27 @@ class EntraProvider:
           "Active user has Global Administrator rights. Executing automatic"
           " Admin Consent..."
       )
-      consent_cmd = (
-          f"az ad app permission grant --id {client_id} "
-          f"--api {self.SHAREPOINT_APP_ID} --admin-consent"
-      )
+      consent_cmd = f"az ad app permission admin-consent --id {client_id}"
       res = self._run_cmd(consent_cmd, check=False)
       if res.returncode == 0:
         self.logger.info("Tenant-wide Admin Consent granted successfully.")
         return True
+
+      # Fallback to per-API grant if admin-consent CLI alias differs
+      g_res = self._run_cmd(
+          f"az ad app permission grant --id {client_id} --api"
+          f" {self.GRAPH_APP_ID} --admin-consent",
+          check=False,
+      )
+      s_res = self._run_cmd(
+          f"az ad app permission grant --id {client_id} --api"
+          f" {self.SHAREPOINT_APP_ID} --admin-consent",
+          check=False,
+      )
+      if g_res.returncode == 0 or s_res.returncode == 0:
+        self.logger.info("Tenant-wide Admin Consent granted successfully.")
+        return True
+
       self.logger.warning("Automatic Admin Consent grant failed.")
       return False
 
@@ -230,13 +239,10 @@ class EntraProvider:
         f"az ad app credential reset --id {client_id} --append --years 1 -o"
         " json"
     )
-    res_json = json.loads(self._run_cmd(secret_cmd).stdout)
+    res = self._run_cmd(secret_cmd)
+    cred_data = json.loads(res.stdout)
+    client_secret = cred_data["password"]
+    expiration_date = cred_data.get("endDate", "2027-01-01T00:00:00Z")
 
-    secret_value = res_json.get("password", "")
-    expiration_date = res_json.get("endDate", "2027-01-01T00:00:00Z")
-
-    self.logger.info(
-        "Client Secret generated successfully. Expiration Date: %s",
-        expiration_date,
-    )
-    return secret_value, expiration_date
+    self.logger.info("Client Secret generated successfully.")
+    return client_secret, expiration_date

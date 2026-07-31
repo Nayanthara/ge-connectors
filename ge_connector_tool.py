@@ -103,13 +103,14 @@ def main() -> None:
   gcp_provider = GcpProvider(logger=logger, rollback_mgr=rollback_mgr)
 
   # 3. Instantiate Selected Connector Plugin
+  sp_plugin = SharePointFederatedPlugin(
+      logger=logger,
+      entra_provider=entra_provider,
+      gcp_provider=gcp_provider,
+      rollback_mgr=rollback_mgr,
+  )
   plugin_registry = {
-      "sharepoint_federated": SharePointFederatedPlugin(
-          logger=logger,
-          entra_provider=entra_provider,
-          gcp_provider=gcp_provider,
-          rollback_mgr=rollback_mgr,
-      )
+      "sharepoint_federated": sp_plugin,
   }
 
   plugin = plugin_registry.get(args.connector)
@@ -192,13 +193,28 @@ def main() -> None:
 
     if not consent_granted:
       report.extend([
-          "\033[1m\033[93m[ACTION REQUIRED] ADMIN CONSENT NEEDED:\033[0m",
-          "The active Entra user does not have Global Administrator rights.",
-          "A Global Admin must approve the delegated permissions by opening:",
           (
-              f"  https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/{client_id}"
+              "\033[1m\033[93m[ACTION REQUIRED] ADMIN CONSENT NEEDED (Microsoft"
+              " Entra Admin Center):\033[0m"
           ),
-          "  -> Click 'Grant admin consent for <Tenant>'",
+          (
+              "Automated background consent was skipped (user is not Global"
+              " Admin)."
+          ),
+          (
+              "An admin can grant consent directly in Microsoft Entra Admin"
+              " Center with zero redirect pages:"
+          ),
+          (
+              "  1. Open Portal:"
+              " https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/"
+              f"{client_id}"
+          ),
+          "  2. Click 'Grant admin consent for <Tenant>'",
+          (
+              "  3. Green checkmarks will appear next to Sites.Search.All,"
+              " Sites.Read.All, and User.Read."
+          ),
           "------------------------------------------------------------------------",
       ])
 
