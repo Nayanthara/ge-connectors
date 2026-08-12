@@ -1,0 +1,12 @@
+# Python compiled bytecode and cache files (includes .pyc, .pyo, and __pycache__)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python distribution and packaging build artifacts
+*.egg-info/
+*.egg
+
+# Testing, test discovery, and code coverage cache directories
+.pytest_cache/
+.coverage
