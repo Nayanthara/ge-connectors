@@ -61,6 +61,24 @@ def parse_args() -> argparse.Namespace:
       ),
   )
   parser.add_argument(
+      "--terraform",
+      action="store_true",
+      default=False,
+      help=(
+          "Generate Terraform configuration files in terraform_ouput/ "
+          "instead of directly provisioning resources"
+      ),
+  )
+  parser.add_argument(
+      "--output-dir",
+      type=str,
+      default="terraform_ouput",
+      help=(
+          "Target directory for generated Terraform files (default:"
+          " terraform_ouput)"
+      ),
+  )
+  parser.add_argument(
       "--verbose",
       action="store_true",
       help="Enable detailed DEBUG logging output",
@@ -90,10 +108,16 @@ def main() -> None:
   # 1. Run Pre-flight Checks
   pf_res = preflight.validate()
   if not pf_res.is_valid:
-    logger.error(
-        "Pre-flight validation failed. Correct the errors above and re-run."
-    )
-    sys.exit(1)
+    if args.terraform:
+      logger.warning(
+          "Pre-flight validation reported issues, but proceeding with Terraform"
+          " file generation."
+      )
+    else:
+      logger.error(
+          "Pre-flight validation failed. Correct the errors above and re-run."
+      )
+      sys.exit(1)
 
   for warning in pf_res.warnings:
     logger.warning("Pre-flight Warning: %s", warning)
@@ -151,7 +175,46 @@ def main() -> None:
       logger.error("Config Error: %s", err)
     sys.exit(1)
 
-  # 6. Execute Dry-Run or Real Provisioning
+  # 6. Terraform Generation Mode
+  if args.terraform:
+    logger.info("Generating Terraform files in '%s'...", args.output_dir)
+    generated_files = plugin.generate_terraform(
+        config, output_dir=args.output_dir
+    )
+    abs_output_dir = (
+        args.output_dir
+        if os.path.isabs(args.output_dir)
+        else os.path.abspath(args.output_dir)
+    )
+
+    file_list_str = "\n".join(
+        f"  - {os.path.basename(f)}" for f in generated_files
+    )
+    report = [
+        (
+            "\n\033[1m\033[92m========================================================================"
+        ),
+        "             TERRAFORM FILES GENERATED SUCCESSFULLY!",
+        (
+            "========================================================================\033[0m"
+        ),
+        f"\033[1mOutput Directory:\033[0m   {abs_output_dir}",
+        f"\033[1mGenerated Files ({len(generated_files)}):\033[0m",
+        file_list_str,
+        "------------------------------------------------------------------------",
+        "\033[1mNext Steps:\033[0m",
+        f"  1. cd {args.output_dir}",
+        "  2. terraform init",
+        "  3. terraform plan",
+        "  4. terraform apply",
+        (
+            "\033[1m\033[92m========================================================================\033[0m"
+        ),
+    ]
+    print("\n".join(report))
+    sys.exit(0)
+
+  # 7. Execute Dry-Run or Real Provisioning
   if args.dry_run:
     logger.info("Executing in DRY-RUN mode...")
     plugin.provision(config, dry_run=True)
@@ -162,11 +225,11 @@ def main() -> None:
     logger.info("Initiating resource provisioning sequence...")
     provision_res = plugin.provision(config, dry_run=False)
 
-    # 7. Post-Flight Diagnostic Verification
+    # 8. Post-Flight Diagnostic Verification
     logger.info("Performing post-flight health verification...")
     is_healthy = plugin.verify(config, provision_res)
 
-    # 8. Disable rollback on successful completion
+    # 9. Disable rollback on successful completion
     rollback_mgr.disable()
 
     # 9. Output Actionable Summary Report

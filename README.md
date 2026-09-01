@@ -14,6 +14,8 @@ ge_connector_tool/
 ├── ge_connector_tool.py             # Main CLI Entry Point & Orchestrator
 ├── config_template.json             # Example configuration JSON
 ├── README.md                        # Package Documentation
+├── tarraform_templates/             # Reusable Terraform HCL Templates
+│   └── sharepoint_federated/        # SharePoint Federated Search Templates
 ├── core/
 │   ├── logger.py                    # Redacting logger (scrubs secrets)
 │   ├── rollback.py                  # Stack-based Rollback Manager
@@ -39,6 +41,7 @@ requirements:
   * **Python 3.8+**
   * **Google Cloud SDK (`gcloud`)**: Authenticated via `gcloud auth login`.
   * **Azure CLI (`az`)**: Authenticated via `az login`.
+  * **Terraform CLI (`>= 1.5.0`)** *(required when applying generated Terraform files)*.
 
 ### B. Access & Permissions
 * **Google Cloud Project**:
@@ -61,14 +64,24 @@ Launches a guided terminal wizard with sensible defaults:
 python3 ge_connector_tool.py
 ```
 
-### B. Dry-Run / Plan Mode
+### B. Terraform Generation Mode (`--terraform`)
+Generates parameterized Terraform HCL files in `terraform_ouput/` instead of directly provisioning:
+```bash
+# Interactive with Terraform file generation
+python3 ge_connector_tool.py --terraform
+
+# Non-interactive config with Terraform file generation
+python3 ge_connector_tool.py --terraform --config config_template.json
+```
+
+### C. Dry-Run / Plan Mode
 Simulates execution, validates permissions, and previews proposed API calls
 without mutating any state:
 ```bash
 python3 ge_connector_tool.py --dry-run
 ```
 
-### C. Non-Interactive Config Mode
+### D. Non-Interactive Config Mode
 Executes automated setups via JSON configuration:
 ```bash
 python3 ge_connector_tool.py --config config_template.json

@@ -10,3 +10,9 @@ __pycache__/
 # Testing, test discovery, and code coverage cache directories
 .pytest_cache/
 .coverage
+
+# Logs and local output directories
+*.log
+terraform_ouput/
+terraform_output/
+
