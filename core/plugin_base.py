@@ -100,3 +100,20 @@ class BaseConnectorPlugin(abc.ABC):
     Returns:
         True if all post-flight health checks pass, False otherwise.
     """
+
+  @abc.abstractmethod
+  def generate_terraform(
+      self,
+      config: typing.Dict[str, typing.Any],
+      output_dir: str,
+  ) -> typing.List[str]:
+    """Generate Terraform configuration files in the specified output directory.
+
+    Args:
+        config: Validated configuration dictionary.
+        output_dir: Target directory path to write generated .tf files.
+
+    Returns:
+        List of generated file paths.
+    """
+

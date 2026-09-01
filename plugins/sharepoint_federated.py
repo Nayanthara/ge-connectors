@@ -4,6 +4,8 @@ Implements the BaseConnectorPlugin interface to automate end-to-end setup for:
 - Microsoft SharePoint Online Federated Search
 """
 
+import json
+import os
 import typing
 
 from core.plugin_base import BaseConnectorPlugin
@@ -310,3 +312,90 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
         project_id, location, datastore_id
     )
     return is_active
+
+  def generate_terraform(
+      self,
+      config: typing.Dict[str, typing.Any],
+      output_dir: str,
+  ) -> typing.List[str]:
+    """Generate Terraform configuration files in the specified output directory.
+
+    Args:
+        config: Validated configuration dictionary.
+        output_dir: Target directory path to write generated .tf files.
+
+    Returns:
+        List of generated file paths.
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    template_dir = os.path.join(
+        base_dir, "tarraform_templates", "sharepoint_federated"
+    )
+    if not os.path.exists(template_dir):
+      alt_dir = os.path.join(base_dir, "tarraform_templates", "sharepoint")
+      if os.path.exists(alt_dir):
+        template_dir = alt_dir
+      else:
+        raise FileNotFoundError(
+            f"Template directory not found at: {template_dir}"
+        )
+
+    if not os.path.isabs(output_dir):
+      target_output_dir = os.path.join(base_dir, output_dir)
+    else:
+      target_output_dir = output_dir
+
+    os.makedirs(target_output_dir, exist_ok=True)
+
+    gcp_project = config.get("gcp_project", "")
+    gcp_location = config.get("location", "global")
+    gcp_region = "us-central1" if gcp_location in ["global", "us"] else (
+        "europe-west1" if gcp_location == "eu" else "us-central1"
+    )
+    entra_tenant_id = config.get("entra_tenant_id", "")
+    instance_uri = config.get("instance_uri", "")
+    datastore_id = config.get("datastore_id", "sharepoint-federated-ds")
+    engine_id = config.get("engine_id", "")
+    cmek_kms_key = config.get("cmek_kms_key")
+    existing_client_id = config.get("existing_client_id")
+
+    cmek_kms_key_tf = json.dumps(cmek_kms_key) if cmek_kms_key else "null"
+    existing_client_id_tf = (
+        json.dumps(existing_client_id) if existing_client_id else "null"
+    )
+
+    replacements = {
+        "__GCP_PROJECT__": gcp_project,
+        "__GCP_LOCATION__": gcp_location,
+        "__GCP_REGION__": gcp_region,
+        "__ENTRA_TENANT_ID__": entra_tenant_id,
+        "__INSTANCE_URI__": instance_uri,
+        "__DATASTORE_ID__": datastore_id,
+        "__ENGINE_ID__": engine_id,
+        "__CMEK_KMS_KEY_TF__": cmek_kms_key_tf,
+        "__EXISTING_CLIENT_ID_TF__": existing_client_id_tf,
+    }
+
+    generated_files = []
+    for filename in sorted(os.listdir(template_dir)):
+      src_path = os.path.join(template_dir, filename)
+      if not os.path.isfile(src_path):
+        continue
+
+      dest_filename = filename[:-4] if filename.endswith(".tpl") else filename
+      dest_path = os.path.join(target_output_dir, dest_filename)
+
+      with open(src_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+      for placeholder, val in replacements.items():
+        content = content.replace(placeholder, val)
+
+      with open(dest_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+      generated_files.append(dest_path)
+      self.logger.info("Generated Terraform file: %s", dest_path)
+
+    return generated_files
+
