@@ -41,7 +41,7 @@ requirements:
   * **Python 3.8+**
   * **Google Cloud SDK (`gcloud`)**: Authenticated via `gcloud auth login`.
   * **Azure CLI (`az`)**: Authenticated via `az login`.
-  * **Terraform CLI (`>= 1.5.0`)** *(required when applying generated Terraform files)*.
+  * **Terraform CLI (`>= 1.5.0`)**: required when applying generated Terraform files.
 
 ### B. Access & Permissions
 * **Google Cloud Project**:
