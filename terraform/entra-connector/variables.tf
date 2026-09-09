@@ -1,13 +1,25 @@
 variable "project_id" {
   type        = string
   description = "The GCP Project ID where Discovery Engine and secret manager are located."
-  default     = "fde-onboarding-501718"
+  default     = "your-gcp-project-id"
 }
 
 variable "ge_location" {
   type        = string
   description = "The Google Discovery Engine location (e.g., 'global', 'us', 'eu')."
   default     = "global"
+}
+
+variable "entra_tenant_id" {
+  type        = string
+  description = "The Microsoft Entra ID (Azure AD) Directory (tenant) ID."
+  default     = "00000000-0000-0000-0000-000000000000"
+}
+
+variable "entra_client_id" {
+  type        = string
+  description = "The Microsoft Entra ID (Azure AD) Application (client) ID."
+  default     = "00000000-0000-0000-0000-000000000000"
 }
 
 locals {
@@ -27,8 +39,8 @@ locals {
   ENTRA_ENTITIES         = ["Userprofiles"]
 
   # Entra Credentials / Identifiers
-  ENTRA_TENENT_ID = "0ad7673e-3c52-47a2-a014-2eb596bb6103"
-  ENTRA_CLIENT_ID = "2307c37e-1a37-446f-9b53-0becf0d22486"
+  ENTRA_TENENT_ID = var.entra_tenant_id
+  ENTRA_CLIENT_ID = var.entra_client_id
 
   # Sync Schedule
   ENTRA_SYNC_TIME_HOURS    = local.environment_friendly == local.DEV_ENV ? 5 : 3

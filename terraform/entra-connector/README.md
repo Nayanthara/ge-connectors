@@ -40,17 +40,31 @@ gcloud secrets create entra_client_secret_latest \
    ```bash
    cp terraform.tfvars.example terraform.tfvars
    ```
-   Set `project_id` and `ge_location` (e.g. `global`, `us`, `eu`).
+   Set values in `terraform.tfvars`:
+   - `project_id`: Target GCP Project ID.
+   - `ge_location`: Google Discovery Engine location (e.g. `global`, `us`, `eu`).
+   - `entra_tenant_id`: Entra / Azure AD Directory (tenant) ID.
+   - `entra_client_id`: Entra Application (client) ID.
 
 2. **Connector Settings (`variables.tf`)**:
-   Update the `locals` block in `variables.tf` with your environment values:
-   - `ENTRA_TENENT_ID`: Entra / Azure AD Directory (tenant) ID.
-   - `ENTRA_CLIENT_ID`: Entra Application (client) ID.
+   Update the `locals` block in `variables.tf` if additional customization is needed:
    - `environment_friendly`: Target environment (`"dev"` or `"prod"`), which controls collection naming and default sync timing.
    - `ENTRA_SYNC_TIME_HOURS`: Sync start hour (defaults: 5 AM for dev, 3 AM for prod).
 
 3. **Provider Region (`providers.tf`)**:
    Update `region` (defaults to `us-central1`) if needed.
+
+## Testing & Validation
+
+Run formatting check, validation, and plan-based unit tests (no GCP credentials required):
+
+```bash
+terraform fmt -check
+terraform validate
+terraform test
+```
+
+These checks are also run automatically on GitHub pull requests and pushes via the [Terraform Tests CI workflow](file:///home/user/connectors/ge-connectors/.github/workflows/test.yml).
 
 ## Deployment
 
@@ -59,3 +73,4 @@ terraform init
 terraform plan
 terraform apply
 ```
+

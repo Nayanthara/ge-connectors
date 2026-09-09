@@ -1,3 +1,8 @@
 # Google Cloud Platform configuration
 project_id  = "your-gcp-project-id"
 ge_location = "global" # Options: "global", "us", "eu"
+
+# Microsoft Entra ID (Azure AD) configuration
+entra_tenant_id = "00000000-0000-0000-0000-000000000000"
+entra_client_id = "00000000-0000-0000-0000-000000000000"
+

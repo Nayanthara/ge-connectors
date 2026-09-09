@@ -1,0 +1,50 @@
+name: Terraform Tests
+
+on:
+  push:
+    branches:
+      - main
+      - sachinss-microsoft
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches:
+      - main
+      - sachinss-microsoft
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Validate and Test Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ~> 1.10.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Terraform Init
+        working-directory: terraform/entra-connector
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: terraform/entra-connector
+        run: terraform validate
+
+      - name: Terraform Test
+        working-directory: terraform/entra-connector
+        run: terraform test

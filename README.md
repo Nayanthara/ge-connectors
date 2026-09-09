@@ -11,6 +11,9 @@ Cloud.
 
 ```
 ge_connector_tool/
+├── .github/
+│   └── workflows/
+│       └── test.yml                 # CI workflow (Terraform fmt, validate, test)
 ├── ge_connector_tool.py             # Main CLI Entry Point & Orchestrator
 ├── config_template.json             # Example configuration JSON
 ├── README.md                        # Package Documentation
@@ -22,8 +25,19 @@ ge_connector_tool/
 ├── providers/
 │   ├── entra_provider.py            # Microsoft Entra ID CLI / API provider
 │   └── gcp_provider.py              # GCP Discovery Engine & Secret Manager
-└── plugins/
-    └── sharepoint_federated.py      # SharePoint Federated Plugin
+├── plugins/
+│   └── sharepoint_federated.py      # SharePoint Federated Plugin
+└── terraform/
+    └── entra-connector/             # Terraform module for Entra People Data Connector
+        ├── main.tf
+        ├── variables.tf
+        ├── providers.tf
+        ├── data.tf
+        ├── terraform.tfvars.example
+        ├── scripts/
+        │   └── update_sync_time.sh  # Post-provisioning sync time update
+        └── tests/
+            └── connector.tftest.hcl # Native Terraform unit tests
 ```
 
 ---
@@ -94,3 +108,20 @@ python3 ge_connector_tool.py --config config_template.json
 * **Extensible Connector Architecture**: Built on a `BaseConnectorPlugin`
   interface to easily add support for other 3P systems (OneDrive, Outlook,
   Teams, Confluence, Jira).
+
+---
+
+## 5. Terraform Infrastructure & CI
+
+Terraform modules for infrastructure provisioning are located in the `terraform/` directory:
+
+* **Entra Data Connector** (`terraform/entra-connector/`): Provisions the Google Discovery Engine Microsoft Entra ID (Azure AD) People Data Connector and configures periodic synchronization. See [terraform/entra-connector/README.md](terraform/entra-connector/README.md) for details.
+* **Testing**: Plan-based unit tests use native `terraform test` with mock providers (`mock_provider "google"`), requiring no cloud credentials:
+  ```bash
+  cd terraform/entra-connector
+  terraform init -backend=false
+  terraform validate
+  terraform test
+  ```
+* **CI/CD Workflow**: [`.github/workflows/test.yml`](.github/workflows/test.yml) runs on every push and pull request affecting Terraform files to ensure formatting (`terraform fmt`), syntax validity (`terraform validate`), and test assertions (`terraform test`) pass.
+
