@@ -1,0 +1,3 @@
+# Google Cloud Platform configuration
+project_id  = "your-gcp-project-id"
+ge_location = "global" # Options: "global", "us", "eu"
