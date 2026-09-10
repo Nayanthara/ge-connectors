@@ -27,7 +27,7 @@ ge_connector_tool/
 │   └── gcp_provider.py              # GCP Discovery Engine & Secret Manager
 ├── plugins/
 │   └── sharepoint_federated.py      # SharePoint Federated Plugin
-└── terraform/
+└── terraform_templates/
     └── entra-connector/             # Terraform module for Entra People Data Connector
         ├── main.tf
         ├── variables.tf
@@ -113,12 +113,12 @@ python3 ge_connector_tool.py --config config_template.json
 
 ## 5. Terraform Infrastructure & CI
 
-Terraform modules for infrastructure provisioning are located in the `terraform/` directory:
+Terraform modules for infrastructure provisioning are located in the `terraform_templates/` directory:
 
-* **Entra Data Connector** (`terraform/entra-connector/`): Provisions the Google Discovery Engine Microsoft Entra ID (Azure AD) People Data Connector and configures periodic synchronization. See [terraform/entra-connector/README.md](terraform/entra-connector/README.md) for details.
+* **Entra Data Connector** (`terraform_templates/entra-connector/`): Provisions the Google Discovery Engine Microsoft Entra ID (Azure AD) People Data Connector and configures periodic synchronization. See [terraform_templates/entra-connector/README.md](terraform_templates/entra-connector/README.md) for details.
 * **Testing**: Plan-based unit tests use native `terraform test` with mock providers (`mock_provider "google"`), requiring no cloud credentials:
   ```bash
-  cd terraform/entra-connector
+  cd terraform_templates/entra-connector
   terraform init -backend=false
   terraform validate
   terraform test

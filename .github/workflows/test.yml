@@ -35,16 +35,16 @@ jobs:
           terraform_version: ~> 1.10.0
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive terraform/
+        run: terraform fmt -check -diff -recursive terraform_templates/
 
       - name: Terraform Init
-        working-directory: terraform/entra-connector
+        working-directory: terraform_templates/entra-connector
         run: terraform init -backend=false
 
       - name: Terraform Validate
-        working-directory: terraform/entra-connector
+        working-directory: terraform_templates/entra-connector
         run: terraform validate
 
       - name: Terraform Test
-        working-directory: terraform/entra-connector
+        working-directory: terraform_templates/entra-connector
         run: terraform test
