@@ -10,3 +10,20 @@ __pycache__/
 # Testing, test discovery, and code coverage cache directories
 .pytest_cache/
 .coverage
+
+# Terraform temporary files and directories
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*tfplan*
+.terraformrc
+terraform.rc
