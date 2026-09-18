@@ -329,10 +329,10 @@ class SharePointFederatedPlugin(BaseConnectorPlugin):
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     template_dir = os.path.join(
-        base_dir, "tarraform_templates", "sharepoint_federated"
+        base_dir, "terraform_templates", "sharepoint_federated"
     )
     if not os.path.exists(template_dir):
-      alt_dir = os.path.join(base_dir, "tarraform_templates", "sharepoint")
+      alt_dir = os.path.join(base_dir, "terraform_templates", "sharepoint")
       if os.path.exists(alt_dir):
         template_dir = alt_dir
       else:

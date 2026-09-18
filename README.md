@@ -11,11 +11,12 @@ Cloud.
 
 ```
 ge_connector_tool/
+├── .github/
+│   └── workflows/
+│       └── test.yml                 # CI workflow (Terraform fmt, validate, test)
 ├── ge_connector_tool.py             # Main CLI Entry Point & Orchestrator
 ├── config_template.json             # Example configuration JSON
 ├── README.md                        # Package Documentation
-├── tarraform_templates/             # Reusable Terraform HCL Templates
-│   └── sharepoint_federated/        # SharePoint Federated Search Templates
 ├── core/
 │   ├── logger.py                    # Redacting logger (scrubs secrets)
 │   ├── rollback.py                  # Stack-based Rollback Manager
@@ -24,8 +25,20 @@ ge_connector_tool/
 ├── providers/
 │   ├── entra_provider.py            # Microsoft Entra ID CLI / API provider
 │   └── gcp_provider.py              # GCP Discovery Engine & Secret Manager
-└── plugins/
-    └── sharepoint_federated.py      # SharePoint Federated Plugin
+├── plugins/
+│   └── sharepoint_federated.py      # SharePoint Federated Plugin
+└── terraform_templates/             # Reusable Terraform HCL Templates
+    ├── sharepoint_federated/        # SharePoint Federated Search Templates
+    └── entra-connector/             # Terraform module for Entra People Data Connector
+        ├── main.tf
+        ├── variables.tf
+        ├── providers.tf
+        ├── data.tf
+        ├── terraform.tfvars.example
+        ├── scripts/
+        │   └── update_sync_time.sh  # Post-provisioning sync time update
+        └── tests/
+            └── connector.tftest.hcl # Native Terraform unit tests
 ```
 
 ---
@@ -107,3 +120,21 @@ python3 ge_connector_tool.py --config config_template.json
 * **Extensible Connector Architecture**: Built on a `BaseConnectorPlugin`
   interface to easily add support for other 3P systems (OneDrive, Outlook,
   Teams, Confluence, Jira).
+
+---
+
+## 5. Terraform Infrastructure & CI
+
+Terraform modules for infrastructure provisioning are located in the `terraform_templates/` directory:
+
+* **Entra Data Connector** (`terraform_templates/entra-connector/`): Provisions the Google Discovery Engine Microsoft Entra ID (Azure AD) People Data Connector and configures periodic synchronization. See [terraform_templates/entra-connector/README.md](terraform_templates/entra-connector/README.md) for details.
+* **SharePoint Federated** (`terraform_templates/sharepoint_federated/`): Parameterized templates rendered by the CLI's `--terraform` mode (see section 3B). These contain `__PLACEHOLDER__` tokens and are not applied in place; the tool writes the resolved copies to `terraform_ouput/`. See [terraform_templates/sharepoint_federated/README.md](terraform_templates/sharepoint_federated/README.md) for details.
+* **Testing**: Plan-based unit tests use native `terraform test` with mock providers (`mock_provider "google"`), requiring no cloud credentials:
+  ```bash
+  cd terraform_templates/entra-connector
+  terraform init -backend=false
+  terraform validate
+  terraform test
+  ```
+* **CI/CD Workflow**: [`.github/workflows/test.yml`](.github/workflows/test.yml) runs on every push and pull request affecting Terraform files to ensure formatting (`terraform fmt`), syntax validity (`terraform validate`), and test assertions (`terraform test`) pass.
+
