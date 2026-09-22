@@ -1,0 +1,9 @@
+gcp_project        = "__GCP_PROJECT__"
+gcp_location       = "__GCP_LOCATION__"
+gcp_region         = "__GCP_REGION__"
+entra_tenant_id    = "__ENTRA_TENANT_ID__"
+instance_uri       = "__INSTANCE_URI__"
+datastore_id       = "__DATASTORE_ID__"
+engine_id          = "__ENGINE_ID__"
+cmek_kms_key       = __CMEK_KMS_KEY_TF__
+existing_client_id = __EXISTING_CLIENT_ID_TF__

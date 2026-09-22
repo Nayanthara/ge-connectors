@@ -27,7 +27,8 @@ ge_connector_tool/
 │   └── gcp_provider.py              # GCP Discovery Engine & Secret Manager
 ├── plugins/
 │   └── sharepoint_federated.py      # SharePoint Federated Plugin
-└── terraform_templates/
+└── terraform_templates/             # Reusable Terraform HCL Templates
+    ├── sharepoint_federated/        # SharePoint Federated Search Templates
     └── entra-connector/             # Terraform module for Entra People Data Connector
         ├── main.tf
         ├── variables.tf
@@ -53,6 +54,7 @@ requirements:
   * **Python 3.8+**
   * **Google Cloud SDK (`gcloud`)**: Authenticated via `gcloud auth login`.
   * **Azure CLI (`az`)**: Authenticated via `az login`.
+  * **Terraform CLI (`>= 1.5.0`)**: required when applying generated Terraform files.
 
 ### B. Access & Permissions
 * **Google Cloud Project**:
@@ -75,14 +77,24 @@ Launches a guided terminal wizard with sensible defaults:
 python3 ge_connector_tool.py
 ```
 
-### B. Dry-Run / Plan Mode
+### B. Terraform Generation Mode (`--terraform`)
+Generates parameterized Terraform HCL files in `terraform_ouput/` instead of directly provisioning:
+```bash
+# Interactive with Terraform file generation
+python3 ge_connector_tool.py --terraform
+
+# Non-interactive config with Terraform file generation
+python3 ge_connector_tool.py --terraform --config config_template.json
+```
+
+### C. Dry-Run / Plan Mode
 Simulates execution, validates permissions, and previews proposed API calls
 without mutating any state:
 ```bash
 python3 ge_connector_tool.py --dry-run
 ```
 
-### C. Non-Interactive Config Mode
+### D. Non-Interactive Config Mode
 Executes automated setups via JSON configuration:
 ```bash
 python3 ge_connector_tool.py --config config_template.json
@@ -116,6 +128,7 @@ python3 ge_connector_tool.py --config config_template.json
 Terraform modules for infrastructure provisioning are located in the `terraform_templates/` directory:
 
 * **Entra Data Connector** (`terraform_templates/entra-connector/`): Provisions the Google Discovery Engine Microsoft Entra ID (Azure AD) People Data Connector and configures periodic synchronization. See [terraform_templates/entra-connector/README.md](terraform_templates/entra-connector/README.md) for details.
+* **SharePoint Federated** (`terraform_templates/sharepoint_federated/`): Parameterized templates rendered by the CLI's `--terraform` mode (see section 3B). These contain `__PLACEHOLDER__` tokens and are not applied in place; the tool writes the resolved copies to `terraform_ouput/`. See [terraform_templates/sharepoint_federated/README.md](terraform_templates/sharepoint_federated/README.md) for details.
 * **Testing**: Plan-based unit tests use native `terraform test` with mock providers (`mock_provider "google"`), requiring no cloud credentials:
   ```bash
   cd terraform_templates/entra-connector

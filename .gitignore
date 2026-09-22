@@ -11,6 +11,11 @@ __pycache__/
 .pytest_cache/
 .coverage
 
+# Logs and local output directories
+*.log
+terraform_ouput/
+terraform_output/
+
 # Terraform temporary files and directories
 **/.terraform/
 *.tfstate
