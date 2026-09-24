@@ -1,15 +1,15 @@
 # Data source to obtain GCP OAuth access token for Discovery Engine REST setup
 data "google_client_config" "current" {}
 
-# Provision SharePoint Online Federated Data Connector in Discovery Engine
+# Provision Custom MCP Server Connector in Discovery Engine
 # Uses the official setUpDataConnector endpoint:
 # https://discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{location}:setUpDataConnector
-resource "terraform_data" "setup_sharepoint_connector" {
+resource "terraform_data" "setup_custom_mcp_connector" {
   input = {
     project_id   = var.gcp_project
     location     = var.gcp_location
     datastore_id = var.datastore_id
-    instance_uri = var.instance_uri
+    mcp_url      = var.mcp_url
     client_id    = local.effective_client_id
     tenant_id    = var.entra_tenant_id
     engine_id    = var.engine_id
@@ -22,22 +22,32 @@ if [ -z "$ACCESS_TOKEN" ]; then
   ACCESS_TOKEN=$(gcloud auth print-access-token)
 fi
 
+AUTH_URL="https://login.microsoftonline.com/${var.entra_tenant_id}/oauth2/v2.0/authorize"
+TOKEN_URL="https://login.microsoftonline.com/${var.entra_tenant_id}/oauth2/v2.0/token"
+
 PAYLOAD=$(cat <<JSON
 {
   "collectionId": "${var.datastore_id}",
-  "collectionDisplayName": "SharePoint Online Federated",
+  "collectionDisplayName": "Microsoft Custom MCP Actions (${var.datastore_id})",
   "dataConnector": {
-    "dataSource": "sharepoint_federated_search",
+    "dataSource": "custom_mcp",
+    "connectorModes": ["ACTIONS", "FEDERATED"],
     "params": {
-      "client_id": "${local.effective_client_id}",
-      "client_secret": "${local.client_secret_value}",
-      "instance_uri": "${var.instance_uri}",
-      "tenant_id": "${var.entra_tenant_id}"
+      "oauth_access_token": "placeholder"
     },
-    "entities": [{"entityName": "file"}],
-    "refreshInterval": "7200s",
-    "connectorType": "THIRD_PARTY_FEDERATED",
-    "connectorModes": ["FEDERATED"]
+    "actionConfig": {
+      "actionParams": {
+        "instance_uri": "${var.mcp_url}",
+        "auth_uri": "$AUTH_URL",
+        "token_uri": "$TOKEN_URL",
+        "client_id": "${local.effective_client_id}",
+        "client_secret": "${local.client_secret_value}",
+        "scopes": "offline_access .default"
+      },
+      "createBapConnection": true,
+      "isActionConfigured": true
+    },
+    "refreshInterval": "7200s"
   }
 }
 JSON
@@ -65,3 +75,4 @@ EOT
     google_secret_manager_secret_version.oauth_secret_version,
   ]
 }
+
