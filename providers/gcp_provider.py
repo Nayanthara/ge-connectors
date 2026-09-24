@@ -2,9 +2,10 @@
 
 Handles GCP infrastructure operations for Gemini Enterprise:
 - Automated GCP API enablement
-- Secret Manager creation
-- Discovery Engine Data Store creation via REST API
-- Binding/linking Data Store to Gemini Enterprise Engine/App
+- Secret Manager creation (with CMEK & expiration tagging)
+- Universal Dual-Mode BAP DataConnector creation via Discovery Engine REST API
+- Gemini Enterprise Engine / App creation and 33 Engine.features management
+- DataStore linking and health polling
 """
 
 import json
@@ -15,6 +16,12 @@ import typing
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from core.catalog import (
+    CONNECTOR_CATALOG,
+    build_engine_features_map,
+    resolve_enabled_actions,
+)
 
 
 class GcpProvider:
@@ -51,12 +58,7 @@ class GcpProvider:
     return res.stdout.strip()
 
   def enable_apis(self, project_id: str, dry_run: bool = False) -> None:
-    """Enable required GCP APIs.
-
-    Args:
-        project_id: Target GCP Project ID.
-        dry_run: If True, simulates action without modifying state.
-    """
+    """Enable required GCP APIs."""
     if dry_run:
       self.logger.info(
           "[DRY-RUN] Would enable GCP APIs: %s on project %s.",
@@ -66,16 +68,15 @@ class GcpProvider:
       return
 
     self.logger.info(
-        "Configuring gcloud quota project and enabling required GCP APIs on"
-        " project '%s'...",
+        "Configuring gcloud quota project and enabling required GCP APIs on project '%s'...",
         project_id,
     )
     self._run_cmd(
         f"gcloud config set billing/quota_project {project_id}", check=False
     )
     cmd = (
-        f"gcloud services enable {' '.join(self.REQUIRED_APIS)}"
-        f" --project={project_id}"
+        f"gcloud services enable {' '.join(self.REQUIRED_APIS)} "
+        f"--project={project_id}"
     )
     self._run_cmd(cmd)
     self.logger.info("GCP APIs enabled successfully.")
@@ -89,27 +90,11 @@ class GcpProvider:
       cmek_kms_key: typing.Optional[str] = None,
       dry_run: bool = False,
   ) -> str:
-    """Store Client Secret in Secret Manager with expiration tags.
-
-    Args:
-        project_id: GCP Project ID.
-        secret_id: Target Secret Manager ID.
-        secret_value: Client secret value string.
-        expiration_date: Expiration ISO date string.
-        cmek_kms_key: Optional Cloud KMS Key URI.
-        dry_run: If True, simulates action without modifying state.
-
-    Returns:
-        GCP secret version resource name string.
-
-    Raises:
-        RuntimeError: If secret creation fails or permissions are denied.
-    """
+    """Store Client Secret in Secret Manager with expiration tags."""
     secret_path = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
     if dry_run:
       self.logger.info(
-          "[DRY-RUN] Would store Client Secret in GCP Secret Manager (%s) with"
-          " CMEK: %s.",
+          "[DRY-RUN] Would store Client Secret in GCP Secret Manager (%s) with CMEK: %s.",
           secret_id,
           cmek_kms_key or "Google-Managed",
       )
@@ -119,13 +104,11 @@ class GcpProvider:
         "Storing Client Secret in GCP Secret Manager ('%s')...", secret_id
     )
 
-    # Check if secret container exists
     check_cmd = (
         f"gcloud secrets describe {secret_id} --project={project_id} -o json"
     )
     res = self._run_cmd(check_cmd, check=False)
 
-    # Build CMEK flag if provided
     cmek_flag = (
         f"--kms-key-name={cmek_kms_key}"
         if cmek_kms_key
@@ -133,7 +116,7 @@ class GcpProvider:
     )
 
     exp_clean = expiration_date.split("T")[0].replace("-", "_")
-    labels = f"expiration_date={exp_clean},connector_type=sharepoint_federated_search,alert_before_days=30"
+    labels = f"expiration_date={exp_clean},connector_type=microsoft_365,alert_before_days=30,created_by=ge_connector_tool"
 
     if res.returncode != 0:
       self.logger.info(
@@ -149,48 +132,15 @@ class GcpProvider:
             "IAM_PERMISSION_DENIED" in create_res.stderr
             or "secretmanager.secrets.create" in create_res.stderr
         ):
-          self.logger.warning(
-              "Secret creation failed due to missing IAM permissions."
-              " Attempting auto-grant of 'roles/secretmanager.editor'..."
-          )
-          gcp_user_res = self._run_cmd(
-              "gcloud config get-value account", check=False
-          )
-          gcp_user = (
-              gcp_user_res.stdout.strip()
-              if gcp_user_res.returncode == 0
-              else ""
-          )
-          if gcp_user:
-            grant_cmd = (
-                f"gcloud projects add-iam-policy-binding {project_id}"
-                f' --member="user:{gcp_user}"'
-                ' --role="roles/secretmanager.editor" --quiet'
-            )
-            grant_res = self._run_cmd(grant_cmd, check=False)
-            if grant_res.returncode == 0:
-              self.logger.info(
-                  "Successfully self-granted 'roles/secretmanager.editor'."
-                  " Retrying secret creation..."
-              )
-              self._run_cmd(create_cmd, check=True)
-            else:
-              raise RuntimeError(
-                  "Permission 'secretmanager.secrets.create' denied on project"
-                  f" '{project_id}'.\n"
-                  f"Please ask a Project IAM Admin to run:\n"
-                  f"  gcloud projects add-iam-policy-binding {project_id}"
-                  f' --member="user:{gcp_user}"'
-                  ' --role="roles/secretmanager.editor"'
-              )
-        else:
           raise RuntimeError(
-              f"Failed to create secret '{secret_id}': {create_res.stderr}"
+              "Permission denied creating Secret Manager secret. Ensure active user has roles/secretmanager.admin."
           )
+        raise RuntimeError(f"Secret creation failed: {create_res.stderr}")
 
       def cleanup_secret():
         self.logger.warning(
-            "Rollback: Deleting transient secret (%s)...", secret_id
+            "Rollback: Deleting transient Secret Manager secret (%s)...",
+            secret_id,
         )
         subprocess.run(
             f"gcloud secrets delete {secret_id} --project={project_id} --quiet",
@@ -216,81 +166,105 @@ class GcpProvider:
     )
     return secret_path
 
-  def create_discovery_engine_data_store(
+  def build_bap_connector_payload(
+      self,
+      data_source: str,
+      mode: str,
+      params: typing.Dict[str, typing.Any],
+      action_params: typing.Dict[str, typing.Any],
+      entities: typing.List[typing.Dict[str, str]],
+      enabled_actions: typing.Optional[typing.List[str]] = None,
+      destination_host: typing.Optional[str] = None,
+      refresh_interval: str = "7200s",
+  ) -> typing.Dict[str, typing.Any]:
+    """Construct standard Discovery Engine BAP DataConnector payload."""
+    is_ingestion = mode.upper() == "DATA_INGESTION"
+
+    if is_ingestion:
+      connector_modes = ["DATA_CONNECTOR"]
+      acl_enabled = True
+      actions_list = []
+    else:
+      connector_modes = ["FEDERATED", "ACTIONS"]
+      acl_enabled = False
+      if enabled_actions is not None:
+        actions_list = enabled_actions
+      else:
+        actions_list = resolve_enabled_actions(data_source, access_level="READ_WRITE")
+
+    bap_config: typing.Dict[str, typing.Any] = {
+        "supportedConnectorModes": ["ACTIONS"],
+    }
+    if actions_list:
+      bap_config["enabledActions"] = actions_list
+
+    payload: typing.Dict[str, typing.Any] = {
+        "dataSource": data_source,
+        "connectorModes": connector_modes,
+        "aclEnabled": acl_enabled,
+        "params": params,
+        "actionConfig": {
+            "actionParams": action_params,
+            "createBapConnection": True,
+            "isActionConfigured": True,
+        },
+        "bapConfig": bap_config,
+        "entities": entities,
+        "refreshInterval": refresh_interval,
+        "syncMode": "PERIODIC",
+    }
+
+    if destination_host:
+      payload["destinationConfigs"] = [
+          {"key": "url", "destinations": [{"host": destination_host}]}
+      ]
+
+    return payload
+
+  def create_discovery_engine_connector(
       self,
       project_id: str,
       location: str,
-      datastore_id: str,
-      client_id: str,
-      client_secret: str,
-      tenant_id: str,
-      instance_uri: str,
+      collection_id: str,
+      collection_display_name: str,
+      connector_payload: typing.Dict[str, typing.Any],
       dry_run: bool = False,
   ) -> typing.Dict[str, typing.Any]:
-    """Call Discovery Engine REST API to provision SharePoint Data Store.
-
-    Uses the official setUpDataConnector endpoint as documented in:
-    https://docs.cloud.google.com/gemini/enterprise/docs/connectors/ms-sharepoint/set-up-data-store
-
-    Args:
-        project_id: GCP Project ID.
-        location: GCP Location (e.g. global, us, eu).
-        datastore_id: Data Store / Collection ID string.
-        client_id: Entra Application Client ID.
-        client_secret: Entra Application Client Secret.
-        tenant_id: Entra Tenant ID string.
-        instance_uri: SharePoint Instance URL string.
-        dry_run: If True, simulates action without modifying state.
-
-    Returns:
-        API Response Dictionary.
-    """
+    """Call Discovery Engine REST API setUpDataConnector to provision connector."""
     url = (
         f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
         f"locations/{location}:setUpDataConnector"
     )
 
-    payload = {
-        "collectionId": datastore_id,
-        "collectionDisplayName": "SharePoint Online Federated",
-        "dataConnector": {
-            "dataSource": "sharepoint_federated_search",
-            "params": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "instance_uri": instance_uri,
-                "tenant_id": tenant_id,
-            },
-            "entities": [{"entityName": "file"}],
-            "refreshInterval": "7200s",
-            "connectorType": "THIRD_PARTY_FEDERATED",
-            "connectorModes": ["FEDERATED"],
-        },
+    request_body = {
+        "collectionId": collection_id,
+        "collectionDisplayName": collection_display_name,
+        "dataConnector": connector_payload,
     }
 
     if dry_run:
       self.logger.info(
-          "[DRY-RUN] Would issue POST request to setUpDataConnector API for"
-          " '%s'.",
-          datastore_id,
+          "[DRY-RUN] Would call setUpDataConnector for '%s' (%s). Payload: %s",
+          collection_id,
+          collection_display_name,
+          json.dumps(request_body, indent=2),
       )
       return {
           "name": (
               f"projects/{project_id}/locations/{location}/"
-              f"collections/default_collection/dataStores/{datastore_id}"
+              f"collections/default_collection/dataStores/{collection_id}"
           )
       }
 
     self.logger.info(
-        "Provisioning Discovery Engine SharePoint Federated Data Store '%s'"
-        " via setUpDataConnector REST API...",
-        datastore_id,
+        "Provisioning Discovery Engine Data Connector '%s' via setUpDataConnector...",
+        collection_id,
     )
     access_token = self.get_access_token()
 
     req = urllib.request.Request(
         url,
-        data=json.dumps(payload).encode("utf-8"),
+        data=json.dumps(request_body).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
@@ -302,17 +276,15 @@ class GcpProvider:
     try:
       with urllib.request.urlopen(req) as resp:
         res_json = json.loads(resp.read().decode("utf-8"))
-        self.logger.info(
-            "setUpDataConnector API request submitted successfully."
-        )
+        self.logger.info("setUpDataConnector request submitted successfully.")
 
         def cleanup_datastore():
           self.logger.warning(
-              "Rollback: Deleting transient Data Store (%s)...", datastore_id
+              "Rollback: Deleting transient Data Store (%s)...", collection_id
           )
           del_url = (
               f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
-              f"locations/{location}/collections/default_collection/dataStores/{datastore_id}"
+              f"locations/{location}/collections/default_collection/dataStores/{collection_id}"
           )
           del_req = urllib.request.Request(
               del_url,
@@ -324,11 +296,11 @@ class GcpProvider:
           )
           try:
             urllib.request.urlopen(del_req)
-          except Exception:  # pylint: disable=broad-exception-caught
+          except Exception:
             pass
 
         self.rollback_mgr.register(
-            f"Delete Discovery Engine Data Store ({datastore_id})",
+            f"Delete Discovery Engine Data Store ({collection_id})",
             cleanup_datastore,
         )
 
@@ -336,15 +308,137 @@ class GcpProvider:
     except urllib.error.HTTPError as e:
       err_msg = e.read().decode("utf-8")
       if "ALREADY_EXISTS" in err_msg or e.code == 409:
-        self.logger.warning("Data Store '%s' already exists.", datastore_id)
+        self.logger.warning("Data Store '%s' already exists.", collection_id)
         return {
             "name": (
                 f"projects/{project_id}/locations/{location}/"
-                f"collections/default_collection/dataStores/{datastore_id}"
+                f"collections/default_collection/dataStores/{collection_id}"
             )
         }
       self.logger.error("setUpDataConnector API Error %d: %s", e.code, err_msg)
       raise e
+
+  def get_or_create_engine(
+      self,
+      project_id: str,
+      location: str,
+      engine_id: str,
+      display_name: str,
+      company_name: str = "Cymbal",
+      features_preset: str = "RECOMMENDED",
+      custom_features: typing.Optional[typing.List[str]] = None,
+      dry_run: bool = False,
+  ) -> typing.Dict[str, typing.Any]:
+    """Get existing Gemini Enterprise Engine or create a new one."""
+    if dry_run:
+      self.logger.info(
+          "[DRY-RUN] Would get or create Gemini Enterprise Engine '%s' (%s).",
+          engine_id,
+          display_name,
+      )
+      return {"name": f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}"}
+
+    access_token = self.get_access_token()
+    base_url = (
+        f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
+        f"locations/{location}/collections/default_collection/engines"
+    )
+    engine_url = f"{base_url}/{engine_id}"
+
+    # 1. Check if Engine exists
+    req_get = urllib.request.Request(
+        engine_url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "X-Goog-User-Project": project_id,
+        },
+        method="GET",
+    )
+    engine_exists = False
+    try:
+      with urllib.request.urlopen(req_get) as resp:
+        engine_data = json.loads(resp.read().decode("utf-8"))
+        engine_exists = True
+        self.logger.info("Found existing Gemini Enterprise Engine '%s'.", engine_id)
+    except urllib.error.HTTPError as e:
+      if e.code == 404:
+        engine_exists = False
+      else:
+        raise e
+
+    features_map = build_engine_features_map(features_preset, custom_features)
+
+    if engine_exists:
+      # Update Engine.features via PATCH
+      self.logger.info("Updating Engine.features on existing Engine '%s'...", engine_id)
+      patch_body = {"features": features_map}
+      req_patch = urllib.request.Request(
+          f"{engine_url}?updateMask=features",
+          data=json.dumps(patch_body).encode("utf-8"),
+          headers={
+              "Authorization": f"Bearer {access_token}",
+              "Content-Type": "application/json",
+              "X-Goog-User-Project": project_id,
+          },
+          method="PATCH",
+      )
+      try:
+        with urllib.request.urlopen(req_patch) as resp:
+          return json.loads(resp.read().decode("utf-8"))
+      except urllib.error.HTTPError as e:
+        self.logger.warning("Engine PATCH update failed: %s", e.read().decode("utf-8"))
+        return engine_data
+
+    # 2. Create new Engine
+    self.logger.info("Creating new Gemini Enterprise Engine '%s'...", engine_id)
+    create_body = {
+        "displayName": display_name,
+        "solutionType": "SOLUTION_TYPE_SEARCH",
+        "industryVertical": "GENERIC",
+        "searchEngineConfig": {
+            "searchTier": "SEARCH_TIER_ENTERPRISE",
+            "searchAddOns": ["SEARCH_ADD_ON_LLM"],
+        },
+        "commonConfig": {
+            "companyName": company_name,
+        },
+        "features": features_map,
+    }
+    create_url = f"{base_url}?engineId={engine_id}"
+    req_create = urllib.request.Request(
+        create_url,
+        data=json.dumps(create_body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Goog-User-Project": project_id,
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req_create) as resp:
+      created_engine = json.loads(resp.read().decode("utf-8"))
+      self.logger.info("Gemini Enterprise Engine '%s' created successfully.", engine_id)
+
+      def cleanup_engine():
+        self.logger.warning("Rollback: Deleting transient Engine (%s)...", engine_id)
+        del_req = urllib.request.Request(
+            engine_url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "X-Goog-User-Project": project_id,
+            },
+            method="DELETE",
+        )
+        try:
+          urllib.request.urlopen(del_req)
+        except Exception:
+          pass
+
+      self.rollback_mgr.register(
+          f"Delete Gemini Enterprise Engine ({engine_id})", cleanup_engine
+      )
+      return created_engine
 
   def bind_data_store_to_engine(
       self,
@@ -354,22 +448,9 @@ class GcpProvider:
       datastore_id: str,
       dry_run: bool = False,
   ) -> bool:
-    """Bind/Link the Data Store to the target Gemini Enterprise Engine/App.
-
-    Args:
-        project_id: GCP Project ID.
-        location: GCP Location.
-        engine_id: Gemini Engine ID string.
-        datastore_id: Data Store ID string.
-        dry_run: If True, simulates action without modifying state.
-
-    Returns:
-        True if engine binding succeeds, False otherwise.
-    """
+    """Bind/Link the Data Store to the target Gemini Enterprise Engine/App."""
     if not engine_id:
-      self.logger.info(
-          "No Gemini Engine ID specified. Skipping automated engine binding."
-      )
+      self.logger.info("No Gemini Engine ID specified. Skipping automated engine binding.")
       return False
 
     url = (
@@ -378,18 +459,10 @@ class GcpProvider:
     )
 
     if dry_run:
-      self.logger.info(
-          "[DRY-RUN] Would bind Data Store '%s' to Engine '%s'.",
-          datastore_id,
-          engine_id,
-      )
+      self.logger.info("[DRY-RUN] Would bind Data Store '%s' to Engine '%s'.", datastore_id, engine_id)
       return True
 
-    self.logger.info(
-        "Binding Data Store '%s' to Gemini Engine '%s'...",
-        datastore_id,
-        engine_id,
-    )
+    self.logger.info("Binding Data Store '%s' to Gemini Engine '%s'...", datastore_id, engine_id)
     access_token = self.get_access_token()
 
     req = urllib.request.Request(
@@ -402,17 +475,13 @@ class GcpProvider:
     )
 
     try:
-      with urllib.request.urlopen(req) as _resp:  # pylint: disable=unused-variable
-        self.logger.info(
-            "Data Store successfully bound to Gemini Engine '%s'.", engine_id
-        )
+      with urllib.request.urlopen(req) as _resp:
+        self.logger.info("Data Store successfully bound to Gemini Engine '%s'.", engine_id)
         return True
     except urllib.error.HTTPError as e:
       err_msg = e.read().decode("utf-8")
       if "ALREADY_EXISTS" in err_msg or e.code == 409:
-        self.logger.info(
-            "Data Store is already linked to Engine '%s'.", engine_id
-        )
+        self.logger.info("Data Store is already linked to Engine '%s'.", engine_id)
         return True
       self.logger.warning("Engine binding failed (%d): %s", e.code, err_msg)
       return False
@@ -424,17 +493,7 @@ class GcpProvider:
       datastore_id: str,
       dry_run: bool = False,
   ) -> bool:
-    """Poll Discovery Engine API until Data Store state transitions to ACTIVE.
-
-    Args:
-        project_id: GCP Project ID.
-        location: GCP Location.
-        datastore_id: Data Store ID string.
-        dry_run: If True, simulates action without modifying state.
-
-    Returns:
-        True if Data Store status is ACTIVE, False otherwise.
-    """
+    """Poll Discovery Engine API until Data Store state transitions to ACTIVE."""
     if dry_run:
       self.logger.info("[DRY-RUN] Health poll simulation: PASSED.")
       return True
@@ -461,11 +520,9 @@ class GcpProvider:
           res_json = json.loads(resp.read().decode("utf-8"))
           name = res_json.get("name", "")
           if name:
-            self.logger.info(
-                "Data Store is ACTIVE and ready (Attempt %d).", attempt
-            )
+            self.logger.info("Data Store is ACTIVE and ready (Attempt %d).", attempt)
             return True
-      except Exception:  # pylint: disable=broad-exception-caught
+      except Exception:
         pass
       time.sleep(3)
 
