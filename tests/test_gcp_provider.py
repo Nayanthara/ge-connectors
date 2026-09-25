@@ -84,7 +84,7 @@ def test_bind_data_store_to_engine_dry_run():
 
 
 def test_bind_data_store_to_engine_already_linked(monkeypatch):
-  """Verify bind_data_store_to_engine when dataStore is already linked."""
+  """Verify bind_data_store_to_engine when dataStore is already linked skips PATCH."""
   import json
   from unittest.mock import MagicMock
 
@@ -98,11 +98,16 @@ def test_bind_data_store_to_engine_already_linked(monkeypatch):
       "dataStoreIds": ["ds1", "ds2"],
   }).encode("utf-8")
 
-  mock_resp = MagicMock()
-  mock_resp.read.return_value = engine_payload
-  mock_resp.__enter__.return_value = mock_resp
+  captured_requests = []
 
-  monkeypatch.setattr("urllib.request.urlopen", lambda req: mock_resp)
+  def fake_urlopen(req):
+    captured_requests.append(req)
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = engine_payload
+    mock_resp.__enter__.return_value = mock_resp
+    return mock_resp
+
+  monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
   res = provider.bind_data_store_to_engine(
       project_id="proj",
@@ -111,6 +116,8 @@ def test_bind_data_store_to_engine_already_linked(monkeypatch):
       datastore_id="ds1",
   )
   assert res is True
+  assert len(captured_requests) == 1
+  assert captured_requests[0].get_method() == "GET"
 
 
 def test_bind_data_store_to_engine_patches_datastore_ids(monkeypatch):
@@ -158,7 +165,8 @@ def test_bind_data_store_to_engine_patches_datastore_ids(monkeypatch):
 
 
 def test_bind_data_store_to_engine_creates_if_not_found(monkeypatch):
-  """Verify bind_data_store_to_engine calls get_or_create_engine when 404."""
+  """Verify bind_data_store_to_engine creates engine when GET returns 404."""
+  import json
   import urllib.error
   from unittest.mock import MagicMock
 
@@ -167,22 +175,29 @@ def test_bind_data_store_to_engine_creates_if_not_found(monkeypatch):
   provider = GcpProvider(logger=logger, rollback_mgr=rollback_mgr)
   monkeypatch.setattr(provider, "get_access_token", lambda: "fake-token")
 
+  created_payload = json.dumps({
+      "name": "projects/proj/locations/global/collections/default_collection/engines/eng1",
+      "dataStoreIds": ["ds1"],
+  }).encode("utf-8")
+
+  captured_requests = []
+
   def fake_urlopen(req):
-    raise urllib.error.HTTPError(
-        url="http://fake",
-        code=404,
-        msg="Not Found",
-        hdrs={},
-        fp=MagicMock(read=lambda: b"Not Found"),
-    )
+    captured_requests.append(req)
+    if req.get_method() == "GET":
+      raise urllib.error.HTTPError(
+          url="http://fake",
+          code=404,
+          msg="Not Found",
+          hdrs={},
+          fp=MagicMock(read=lambda: b"Not Found"),
+      )
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = created_payload
+    mock_resp.__enter__.return_value = mock_resp
+    return mock_resp
 
   monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-  created_engines = []
-  monkeypatch.setattr(
-      provider,
-      "get_or_create_engine",
-      lambda **kwargs: created_engines.append(kwargs) or {"name": "created"},
-  )
 
   res = provider.bind_data_store_to_engine(
       project_id="proj",
@@ -191,8 +206,10 @@ def test_bind_data_store_to_engine_creates_if_not_found(monkeypatch):
       datastore_id="ds1",
   )
   assert res is True
-  assert len(created_engines) == 1
-  assert created_engines[0]["engine_id"] == "eng1"
-  assert created_engines[0]["data_store_ids"] == ["ds1"]
+  assert len(captured_requests) == 2
+  assert captured_requests[0].get_method() == "GET"
+  assert captured_requests[1].get_method() == "POST"
+  body = json.loads(captured_requests[1].data.decode("utf-8"))
+  assert body["dataStoreIds"] == ["ds1"]
 
 

@@ -325,7 +325,7 @@ class GcpProvider:
       engine_id: str,
       display_name: str,
       company_name: str = "Cymbal",
-      features_preset: str = "RECOMMENDED",
+      features_preset: typing.Optional[str] = "RECOMMENDED",
       custom_features: typing.Optional[typing.List[str]] = None,
       data_store_ids: typing.Optional[typing.List[str]] = None,
       dry_run: bool = False,
@@ -367,22 +367,37 @@ class GcpProvider:
       else:
         raise e
 
-    features_map = build_engine_features_map(features_preset, custom_features)
+    features_map = (
+        build_engine_features_map(features_preset, custom_features)
+        if features_preset or custom_features
+        else None
+    )
 
     if engine_exists:
-      # Update Engine.features and dataStoreIds via PATCH
-      self.logger.info("Updating Engine '%s'...", engine_id)
-      patch_body: typing.Dict[str, typing.Any] = {"features": features_map}
-      update_masks = ["features"]
+      # Update Engine.features and dataStoreIds via PATCH only if changed
+      patch_body: typing.Dict[str, typing.Any] = {}
+      update_masks = []
+      if features_map is not None:
+        patch_body["features"] = features_map
+        update_masks.append("features")
+
       if data_store_ids:
         existing_ds = engine_data.get("dataStoreIds", [])
         combined_ds = list(existing_ds)
         for ds in data_store_ids:
           if ds not in combined_ds:
             combined_ds.append(ds)
-        patch_body["dataStoreIds"] = combined_ds
-        update_masks.append("dataStoreIds")
+        if len(combined_ds) > len(existing_ds):
+          patch_body["dataStoreIds"] = combined_ds
+          update_masks.append("dataStoreIds")
+        else:
+          self.logger.info("Data store(s) already linked to Engine '%s'.", engine_id)
 
+      if not update_masks:
+        self.logger.info("Engine '%s' is already up to date.", engine_id)
+        return engine_data
+
+      self.logger.info("Updating Engine '%s'...", engine_id)
       req_patch = urllib.request.Request(
           f"{engine_url}?updateMask={','.join(update_masks)}",
           data=json.dumps(patch_body).encode("utf-8"),
@@ -395,6 +410,7 @@ class GcpProvider:
       )
       try:
         with urllib.request.urlopen(req_patch) as resp:
+          self.logger.info("Engine '%s' updated successfully.", engine_id)
           return json.loads(resp.read().decode("utf-8"))
       except urllib.error.HTTPError as e:
         self.logger.warning("Engine PATCH update failed: %s", e.read().decode("utf-8"))
@@ -472,69 +488,20 @@ class GcpProvider:
       return True
 
     self.logger.info("Binding Data Store '%s' to Gemini Engine '%s'...", datastore_id, engine_id)
-    access_token = self.get_access_token()
-    engine_url = (
-        f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
-        f"locations/{location}/collections/default_collection/engines/{engine_id}"
-    )
-
-    req_get = urllib.request.Request(
-        engine_url,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "X-Goog-User-Project": project_id,
-        },
-        method="GET",
-    )
-
     try:
-      with urllib.request.urlopen(req_get) as resp:
-        engine_data = json.loads(resp.read().decode("utf-8"))
-        current_datastores = engine_data.get("dataStoreIds", [])
-        if datastore_id in current_datastores:
-          self.logger.info("Data Store '%s' is already linked to Engine '%s'.", datastore_id, engine_id)
-          return True
-
-        updated_datastores = list(current_datastores) + [datastore_id]
-        patch_body = {"dataStoreIds": updated_datastores}
-        patch_url = f"{engine_url}?updateMask=dataStoreIds"
-        req_patch = urllib.request.Request(
-            patch_url,
-            data=json.dumps(patch_body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-                "X-Goog-User-Project": project_id,
-            },
-            method="PATCH",
-        )
-        with urllib.request.urlopen(req_patch) as _patch_resp:
-          self.logger.info("Data Store '%s' successfully bound to Gemini Engine '%s'.", datastore_id, engine_id)
-          return True
-
-    except urllib.error.HTTPError as e:
-      if e.code == 404:
-        self.logger.info("Engine '%s' does not exist yet. Creating it with Data Store '%s'...", engine_id, datastore_id)
-        try:
-          self.get_or_create_engine(
-              project_id=project_id,
-              location=location,
-              engine_id=engine_id,
-              display_name=f"Gemini Enterprise Assistant ({engine_id})",
-              data_store_ids=[datastore_id],
-          )
-          return True
-        except Exception as create_err:
-          self.logger.warning("Failed to create Engine '%s' with Data Store '%s': %s", engine_id, datastore_id, str(create_err))
-          return False
-      err_msg = e.read().decode("utf-8")
-      if "ALREADY_EXISTS" in err_msg or e.code == 409:
-        self.logger.info("Data Store is already linked to Engine '%s'.", engine_id)
-        return True
-      self.logger.warning("Engine binding failed (%d): %s", e.code, err_msg)
-      return False
+      self.get_or_create_engine(
+          project_id=project_id,
+          location=location,
+          engine_id=engine_id,
+          display_name=f"Gemini Enterprise Assistant ({engine_id})",
+          features_preset=None,
+          data_store_ids=[datastore_id],
+          dry_run=dry_run,
+      )
+      self.logger.info("Data Store '%s' successfully bound to Gemini Engine '%s'.", datastore_id, engine_id)
+      return True
     except Exception as e:
-      self.logger.warning("Unexpected error binding Data Store '%s' to Engine '%s': %s", datastore_id, engine_id, str(e))
+      self.logger.warning("Failed to bind Data Store '%s' to Engine '%s': %s", datastore_id, engine_id, str(e))
       return False
 
   def poll_health(

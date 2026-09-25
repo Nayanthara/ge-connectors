@@ -126,26 +126,38 @@ curl -s -X POST \
 
 if [ -n "${var.engine_id}" ]; then
   echo "Binding Data Store to Engine ${var.engine_id}..."
-  ENGINE_RES=$(curl -s -X GET \
-    -H "Authorization: Bearer $ACCESS_TOKEN" \
-    -H "X-Goog-User-Project: ${var.gcp_project}" \
-    "https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}")
-  if echo "$ENGINE_RES" | jq -e '.name' > /dev/null 2>&1; then
-    CURRENT_DS=$(echo "$ENGINE_RES" | jq -c '.dataStoreIds // []')
-    if ! echo "$CURRENT_DS" | jq -e 'index("${var.datastore_id}")' > /dev/null 2>&1; then
-      NEW_DS=$(echo "$CURRENT_DS" | jq -c '. + ["${var.datastore_id}"]')
-      curl -s -X PATCH \
-        -H "Authorization: Bearer $ACCESS_TOKEN" \
-        -H "Content-Type: application/json" \
-        -H "X-Goog-User-Project: ${var.gcp_project}" \
-        -d "{\"dataStoreIds\": $NEW_DS}" \
-        "https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}?updateMask=dataStoreIds"
-    else
-      echo "Data Store ${var.datastore_id} is already linked to Engine ${var.engine_id}."
-    fi
-  else
-    echo "Engine ${var.engine_id} not found. Skipping binding."
-  fi
+  python3 -c "
+import json, urllib.request, urllib.error
+
+url = 'https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}'
+headers = {'Authorization': 'Bearer ' + '$ACCESS_TOKEN', 'X-Goog-User-Project': '${var.gcp_project}'}
+
+try:
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    ds_ids = data.get('dataStoreIds', [])
+    if '${var.datastore_id}' not in ds_ids:
+        ds_ids.append('${var.datastore_id}')
+        patch_headers = dict(headers, **{'Content-Type': 'application/json'})
+        patch_req = urllib.request.Request(
+            url + '?updateMask=dataStoreIds',
+            data=json.dumps({'dataStoreIds': ds_ids}).encode('utf-8'),
+            headers=patch_headers,
+            method='PATCH',
+        )
+        urllib.request.urlopen(patch_req)
+        print('Data Store ${var.datastore_id} successfully bound to Engine ${var.engine_id}.')
+    else:
+        print('Data Store ${var.datastore_id} is already linked to Engine ${var.engine_id}.')
+except urllib.error.HTTPError as e:
+    if e.code == 404:
+        print('Engine ${var.engine_id} not found. Skipping binding.')
+    else:
+        print('Engine binding failed (' + str(e.code) + '): ' + e.read().decode('utf-8'))
+except Exception as e:
+    print('Engine binding skipped: ' + str(e))
+"
 fi
 EOT
   }
