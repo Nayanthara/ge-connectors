@@ -126,10 +126,26 @@ curl -s -X POST \
 
 if [ -n "${var.engine_id}" ]; then
   echo "Binding Data Store to Engine ${var.engine_id}..."
-  curl -s -X POST \
+  ENGINE_RES=$(curl -s -X GET \
     -H "Authorization: Bearer $ACCESS_TOKEN" \
     -H "X-Goog-User-Project: ${var.gcp_project}" \
-    "https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}/dataStores?dataStoreId=${var.datastore_id}"
+    "https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}")
+  if echo "$ENGINE_RES" | jq -e '.name' > /dev/null 2>&1; then
+    CURRENT_DS=$(echo "$ENGINE_RES" | jq -c '.dataStoreIds // []')
+    if ! echo "$CURRENT_DS" | jq -e 'index("${var.datastore_id}")' > /dev/null 2>&1; then
+      NEW_DS=$(echo "$CURRENT_DS" | jq -c '. + ["${var.datastore_id}"]')
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        -H "X-Goog-User-Project: ${var.gcp_project}" \
+        -d "{\"dataStoreIds\": $NEW_DS}" \
+        "https://discoveryengine.googleapis.com/v1alpha/projects/${var.gcp_project}/locations/${var.gcp_location}/collections/default_collection/engines/${var.engine_id}?updateMask=dataStoreIds"
+    else
+      echo "Data Store ${var.datastore_id} is already linked to Engine ${var.engine_id}."
+    fi
+  else
+    echo "Engine ${var.engine_id} not found. Skipping binding."
+  fi
 fi
 EOT
   }

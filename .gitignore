@@ -32,3 +32,8 @@ override.tf.json
 *tfplan*
 .terraformrc
 terraform.rc
+
+# Virtual Environments
+.venv/
+venv/
+ENV/

@@ -327,6 +327,7 @@ class GcpProvider:
       company_name: str = "Cymbal",
       features_preset: str = "RECOMMENDED",
       custom_features: typing.Optional[typing.List[str]] = None,
+      data_store_ids: typing.Optional[typing.List[str]] = None,
       dry_run: bool = False,
   ) -> typing.Dict[str, typing.Any]:
     """Get existing Gemini Enterprise Engine or create a new one."""
@@ -369,11 +370,21 @@ class GcpProvider:
     features_map = build_engine_features_map(features_preset, custom_features)
 
     if engine_exists:
-      # Update Engine.features via PATCH
-      self.logger.info("Updating Engine.features on existing Engine '%s'...", engine_id)
-      patch_body = {"features": features_map}
+      # Update Engine.features and dataStoreIds via PATCH
+      self.logger.info("Updating Engine '%s'...", engine_id)
+      patch_body: typing.Dict[str, typing.Any] = {"features": features_map}
+      update_masks = ["features"]
+      if data_store_ids:
+        existing_ds = engine_data.get("dataStoreIds", [])
+        combined_ds = list(existing_ds)
+        for ds in data_store_ids:
+          if ds not in combined_ds:
+            combined_ds.append(ds)
+        patch_body["dataStoreIds"] = combined_ds
+        update_masks.append("dataStoreIds")
+
       req_patch = urllib.request.Request(
-          f"{engine_url}?updateMask=features",
+          f"{engine_url}?updateMask={','.join(update_masks)}",
           data=json.dumps(patch_body).encode("utf-8"),
           headers={
               "Authorization": f"Bearer {access_token}",
@@ -391,7 +402,7 @@ class GcpProvider:
 
     # 2. Create new Engine
     self.logger.info("Creating new Gemini Enterprise Engine '%s'...", engine_id)
-    create_body = {
+    create_body: typing.Dict[str, typing.Any] = {
         "displayName": display_name,
         "solutionType": "SOLUTION_TYPE_SEARCH",
         "industryVertical": "GENERIC",
@@ -404,6 +415,9 @@ class GcpProvider:
         },
         "features": features_map,
     }
+    if data_store_ids:
+      create_body["dataStoreIds"] = data_store_ids
+
     create_url = f"{base_url}?engineId={engine_id}"
     req_create = urllib.request.Request(
         create_url,
@@ -453,37 +467,74 @@ class GcpProvider:
       self.logger.info("No Gemini Engine ID specified. Skipping automated engine binding.")
       return False
 
-    url = (
-        f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
-        f"locations/{location}/collections/default_collection/engines/{engine_id}/dataStores?dataStoreId={datastore_id}"
-    )
-
     if dry_run:
       self.logger.info("[DRY-RUN] Would bind Data Store '%s' to Engine '%s'.", datastore_id, engine_id)
       return True
 
     self.logger.info("Binding Data Store '%s' to Gemini Engine '%s'...", datastore_id, engine_id)
     access_token = self.get_access_token()
+    engine_url = (
+        f"https://discoveryengine.googleapis.com/v1alpha/projects/{project_id}/"
+        f"locations/{location}/collections/default_collection/engines/{engine_id}"
+    )
 
-    req = urllib.request.Request(
-        url,
+    req_get = urllib.request.Request(
+        engine_url,
         headers={
             "Authorization": f"Bearer {access_token}",
             "X-Goog-User-Project": project_id,
         },
-        method="POST",
+        method="GET",
     )
 
     try:
-      with urllib.request.urlopen(req) as _resp:
-        self.logger.info("Data Store successfully bound to Gemini Engine '%s'.", engine_id)
-        return True
+      with urllib.request.urlopen(req_get) as resp:
+        engine_data = json.loads(resp.read().decode("utf-8"))
+        current_datastores = engine_data.get("dataStoreIds", [])
+        if datastore_id in current_datastores:
+          self.logger.info("Data Store '%s' is already linked to Engine '%s'.", datastore_id, engine_id)
+          return True
+
+        updated_datastores = list(current_datastores) + [datastore_id]
+        patch_body = {"dataStoreIds": updated_datastores}
+        patch_url = f"{engine_url}?updateMask=dataStoreIds"
+        req_patch = urllib.request.Request(
+            patch_url,
+            data=json.dumps(patch_body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "X-Goog-User-Project": project_id,
+            },
+            method="PATCH",
+        )
+        with urllib.request.urlopen(req_patch) as _patch_resp:
+          self.logger.info("Data Store '%s' successfully bound to Gemini Engine '%s'.", datastore_id, engine_id)
+          return True
+
     except urllib.error.HTTPError as e:
+      if e.code == 404:
+        self.logger.info("Engine '%s' does not exist yet. Creating it with Data Store '%s'...", engine_id, datastore_id)
+        try:
+          self.get_or_create_engine(
+              project_id=project_id,
+              location=location,
+              engine_id=engine_id,
+              display_name=f"Gemini Enterprise Assistant ({engine_id})",
+              data_store_ids=[datastore_id],
+          )
+          return True
+        except Exception as create_err:
+          self.logger.warning("Failed to create Engine '%s' with Data Store '%s': %s", engine_id, datastore_id, str(create_err))
+          return False
       err_msg = e.read().decode("utf-8")
       if "ALREADY_EXISTS" in err_msg or e.code == 409:
         self.logger.info("Data Store is already linked to Engine '%s'.", engine_id)
         return True
       self.logger.warning("Engine binding failed (%d): %s", e.code, err_msg)
+      return False
+    except Exception as e:
+      self.logger.warning("Unexpected error binding Data Store '%s' to Engine '%s': %s", datastore_id, engine_id, str(e))
       return False
 
   def poll_health(
