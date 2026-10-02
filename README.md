@@ -56,6 +56,9 @@ requirements:
   * **Azure CLI (`az`)**: Authenticated via `az login`.
   * **Terraform CLI (`>= 1.5.0`)**: required when applying generated Terraform files.
 
+> [!NOTE]
+> **Azure CLI (`az`)** is required for Microsoft connector setup to automate Microsoft Entra ID (Azure AD) application registration, API permissions, and credential management.
+
 ### B. Access & Permissions
 * **Google Cloud Project**:
   * `roles/discoveryengine.admin` (Discovery Engine Admin)
