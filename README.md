@@ -123,6 +123,32 @@ If run without arguments (or with `--interactive`), the tool guides you step-by-
 6. **Entra ID App Registration**: The wizard detects whether an app registration exists or creates a new one, generates a 2-year client secret, and sets up least-privilege Graph and SharePoint API permissions.
 7. **Secret Vaulting**: The client secret is automatically vaulted in Google Cloud Secret Manager with metadata tags (`expiration_date`, `alert_before_days=30`, `created_by=ge_connector_tool`).
 8. **Discovery Engine & Engine Linkage**: The tool constructs the BAP payload, initializes the Data Store, and binds it to your Gemini Enterprise Engine.
+## 2. Prerequisites
+
+Before running the tool, verify that the environment meets the following
+requirements:
+
+### A. Binaries & Environment
+* Recommended: **Google Cloud Shell** (`shell.cloud.google.com`).
+* Local Terminal Requirements:
+  * **Python 3.8+**
+  * **Google Cloud SDK (`gcloud`)**: Authenticated via `gcloud auth login`.
+  * **Azure CLI (`az`)**: Authenticated via `az login`.
+  * **Terraform CLI (`>= 1.5.0`)**: required when applying generated Terraform files.
+
+> [!NOTE]
+> **Azure CLI (`az`)** is required for Microsoft connector setup to automate Microsoft Entra ID (Azure AD) application registration, API permissions, and credential management.
+
+### B. Access & Permissions
+* **Google Cloud Project**:
+  * `roles/discoveryengine.admin` (Discovery Engine Admin)
+  * `roles/secretmanager.admin` (Secret Manager Admin)
+  * `roles/serviceusage.serviceUsageAdmin` (Service Usage Admin)
+  * `roles/iam.workforcePoolAdmin` (Workforce Identity Pool Admin)
+* **Microsoft Entra ID (Azure AD)**:
+  * Minimum: `Cloud Application Administrator` (App & Secret creation).
+  * Optional: `Global Administrator` (Enables automatic tenant-wide Admin
+    Consent execution).
 
 ---
 

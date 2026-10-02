@@ -32,6 +32,7 @@ class GcpProvider:
       "secretmanager.googleapis.com",
       "iam.googleapis.com",
       "cloudresourcemanager.googleapis.com",
+      "aiplatform.googleapis.com",
   ]
 
   def __init__(self, logger: logging.Logger, rollback_mgr: typing.Any):
