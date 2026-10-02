@@ -2,6 +2,7 @@
 
 import logging
 from unittest.mock import MagicMock
+
 from core.rollback import RollbackManager
 from providers.entra_provider import EntraProvider
 
@@ -31,4 +32,3 @@ def test_build_resource_access_payload():
     for item in p["resourceAccess"]:
       assert "id" in item
       assert item["type"] in ("Scope", "Role")
-

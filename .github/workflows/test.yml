@@ -8,6 +8,7 @@ on:
     paths:
       - '**.py'
       - 'pyproject.toml'
+      - '.flake8'
       - 'terraform_templates/**'
       - '.github/workflows/test.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
     paths:
       - '**.py'
       - 'pyproject.toml'
+      - '.flake8'
       - 'terraform_templates/**'
       - '.github/workflows/test.yml'
   workflow_dispatch:

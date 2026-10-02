@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 100
+exclude =
+    .venv,
+    terraform_templates,
+    .git,
+    __pycache__,
+    build,
+    dist
+extend-ignore =
+    # 2-space indentation (project standard)
+    E111,
+    E114,
+    # Line too long (handled gracefully)
+    E501
+per-file-ignores =
+    ge_connector_tool.py: E402

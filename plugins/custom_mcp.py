@@ -6,7 +6,7 @@ running on Cloud Run or any external endpoint.
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from core.plugin_base import BaseConnectorPlugin
 
@@ -322,4 +322,3 @@ class CustomMcpPlugin(BaseConnectorPlugin):
       self.logger.info("Generated Terraform file: %s", dest_path)
 
     return generated_files
-

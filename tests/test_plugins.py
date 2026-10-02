@@ -2,6 +2,7 @@
 
 import logging
 from unittest.mock import MagicMock
+
 from core.rollback import RollbackManager
 from plugins.custom_mcp import CustomMcpPlugin
 from plugins.onedrive import OneDrivePlugin
@@ -103,4 +104,3 @@ def test_custom_mcp_plugin_dry_run_and_validate():
   res = plugin.provision(valid_config, dry_run=True)
   assert res["client_id"] == "DRY_RUN_CLIENT_ID"
   assert "ms-custom-mcp-connector" in res["datastore_id"]
-

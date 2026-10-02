@@ -7,7 +7,7 @@ Automates end-to-end setup for Microsoft Outlook in both:
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from core.catalog import resolve_enabled_actions
 from core.plugin_base import BaseConnectorPlugin
@@ -138,8 +138,8 @@ class OutlookPlugin(BaseConnectorPlugin):
         "\033[1m========================================================================\033[0m",
         f"1. Connector Mode:             {mode}",
         f"2. Action Access Tier:         {access_level} ({len(enabled_actions)} BAP actions)",
-        f"3. Supported Entities:         mail, mail-attachment, calendar, contact",
-        f"4. GCP APIs to Enable:         discoveryengine, secretmanager, iam, cloudresourcemanager",
+        "3. Supported Entities:         mail, mail-attachment, calendar, contact",
+        "4. GCP APIs to Enable:         discoveryengine, secretmanager, iam, cloudresourcemanager",
         f"5. Entra ID App Registration:  {app_reg_str}",
         f"6. Admin Consent Action:       {'Automatic Grant (Global Admin)' if is_global_admin else 'Manual Instructions Guidance'}",
         f"7. Secret Manager Storage:     '{config.get('datastore_id', 'outlook-ds')}-oauth-secret'",
@@ -340,4 +340,3 @@ class OutlookPlugin(BaseConnectorPlugin):
       self.logger.info("Generated Terraform file: %s", dest_path)
 
     return generated_files
-

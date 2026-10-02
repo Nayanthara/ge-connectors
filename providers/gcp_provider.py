@@ -18,7 +18,6 @@ import urllib.parse
 import urllib.request
 
 from core.catalog import (
-    CONNECTOR_CATALOG,
     build_engine_features_map,
     resolve_enabled_actions,
 )
@@ -476,7 +475,7 @@ class GcpProvider:
     )
 
     try:
-      with urllib.request.urlopen(req) as _resp:
+      with urllib.request.urlopen(req):
         self.logger.info("Data Store successfully bound to Gemini Engine '%s'.", engine_id)
         return True
     except urllib.error.HTTPError as e:

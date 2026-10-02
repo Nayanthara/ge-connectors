@@ -1,9 +1,7 @@
 """Unit tests for core/catalog.py."""
 
-import pytest
 from core.catalog import (
     ACTION_CATALOG,
-    CONNECTOR_CATALOG,
     ENGINE_FEATURE_CATALOG,
     build_engine_features_map,
     resolve_enabled_actions,

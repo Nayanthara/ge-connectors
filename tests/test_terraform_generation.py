@@ -1,6 +1,5 @@
 """Unit tests for Terraform generation in Gemini Enterprise Connector Tool."""
 
-import json
 import os
 import shutil
 import tempfile
