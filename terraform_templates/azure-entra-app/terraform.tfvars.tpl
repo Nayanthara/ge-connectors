@@ -1,4 +1,5 @@
-app_name                     = "SharePoint-Online-Connector-App"
+entra_tenant_id              = "__ENTRA_TENANT_ID__"
+app_name                     = "__APP_NAME__"
 sign_in_audience             = "AzureADMyOrg"
 client_secret_rotation_hours = "8760h"
 grant_admin_consent          = false

@@ -18,6 +18,11 @@ output "service_principal_object_id" {
   value       = azuread_service_principal.this.object_id
 }
 
+output "entra_client_id" {
+  description = "Microsoft Entra ID Application Client ID"
+  value       = azuread_application.this.client_id
+}
+
 output "client_secret" {
   description = "Generated Client Secret"
   value       = azuread_application_password.this.value
@@ -27,4 +32,9 @@ output "client_secret" {
 output "client_secret_end_date" {
   description = "Client Secret expiration timestamp"
   value       = azuread_application_password.this.end_date
+}
+
+output "admin_consent_url" {
+  description = "Microsoft Entra Admin Center Direct URL to grant Admin Consent"
+  value       = "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/${azuread_application.this.client_id}"
 }

@@ -39,3 +39,8 @@ override.tf.json
 *tfplan*
 .terraformrc
 terraform.rc
+
+
+## Local config 
+config.json
+test_config.json
