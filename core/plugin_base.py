@@ -116,4 +116,3 @@ class BaseConnectorPlugin(abc.ABC):
     Returns:
         List of generated file paths.
     """
-

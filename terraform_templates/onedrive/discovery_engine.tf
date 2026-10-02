@@ -6,14 +6,15 @@ data "google_client_config" "current" {}
 # https://discoveryengine.googleapis.com/v1alpha/projects/{project}/locations/{location}:setUpDataConnector
 resource "terraform_data" "setup_onedrive_connector" {
   input = {
-    project_id   = var.gcp_project
-    location     = var.gcp_location
-    datastore_id = var.datastore_id
-    instance_uri = var.instance_uri
-    client_id    = local.effective_client_id
-    tenant_id    = var.entra_tenant_id
-    engine_id    = var.engine_id
-    mode         = var.connector_mode
+    project_id          = var.gcp_project
+    location            = var.gcp_location
+    datastore_id        = var.datastore_id
+    instance_uri        = var.instance_uri
+    client_id           = local.effective_client_id
+    tenant_id           = var.entra_tenant_id
+    engine_id           = var.engine_id
+    mode                = var.connector_mode
+    action_access_level = var.action_access_level
   }
 
   provisioner "local-exec" {

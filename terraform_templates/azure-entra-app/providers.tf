@@ -3,11 +3,11 @@ terraform {
   required_providers {
     azuread = {
       source  = "hashicorp/azuread"
-      version = ">= 2.45.0"
+      version = "~> 2.47"
     }
   }
 }
 
 provider "azuread" {
-  # Authenticates via Azure CLI (`az login`), environment variables, or managed identity
+  tenant_id = var.entra_tenant_id
 }

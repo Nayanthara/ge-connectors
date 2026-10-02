@@ -1,3 +1,9 @@
+variable "entra_tenant_id" {
+  type        = string
+  description = "The Microsoft Entra ID (Azure AD) Directory / Tenant ID."
+  default     = null
+}
+
 variable "app_name" {
   type        = string
   description = "Display name for the Entra ID Application Registration"

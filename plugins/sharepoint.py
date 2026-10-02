@@ -7,7 +7,7 @@ Automates end-to-end setup for Microsoft SharePoint Online in both:
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 from core.catalog import resolve_enabled_actions
@@ -160,7 +160,7 @@ class SharePointPlugin(BaseConnectorPlugin):
         f"1. Connector Mode:             {mode}",
         f"2. Action Access Tier:         {access_level} ({len(enabled_actions)} BAP actions)",
         f"3. SharePoint URL:             {config.get('instance_uri')}",
-        f"4. GCP APIs to Enable:         discoveryengine, secretmanager, iam, cloudresourcemanager",
+        "4. GCP APIs to Enable:         discoveryengine, secretmanager, iam, cloudresourcemanager",
         f"5. Entra ID App Registration:  {app_reg_str}",
         f"6. Admin Consent Action:       {'Automatic Grant (Global Admin)' if is_global_admin else 'Manual Instructions Guidance'}",
         f"7. Secret Manager Storage:     '{config.get('datastore_id', 'sharepoint-ds')}-oauth-secret'",
@@ -377,4 +377,3 @@ class SharePointPlugin(BaseConnectorPlugin):
       self.logger.info("Generated Terraform file: %s", dest_path)
 
     return generated_files
-

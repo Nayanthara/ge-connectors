@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ge-connectors"
+version = "0.1.0"
+description = "Gemini Enterprise 3P Connector Automation Tool and CLI Orchestrator"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    { name = "Gemini Enterprise Connectors Team" },
+]
+keywords = [
+    "gemini-enterprise",
+    "discovery-engine",
+    "connectors",
+    "sharepoint",
+    "onedrive",
+    "outlook",
+    "teams",
+    "mcp",
+    "terraform",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.1.0",
+    "flake8>=7.0.0",
+]
+test = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+ge-connector = "ge_connector_tool:main"
+ge-connectors = "ge_connector_tool:main"
+
+[tool.setuptools]
+py-modules = ["ge_connector_tool"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "plugins*", "providers*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+indent-width = 2
+extend-exclude = ["terraform_templates"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+]
+ignore = [
+    "E111",  # 2-space indentation (project standard)
+    "E114",  # 2-space comment indentation
+    "E501",  # Line too long (handled gracefully)
+]
+

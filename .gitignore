@@ -6,6 +6,8 @@ __pycache__/
 # Python distribution and packaging build artifacts
 *.egg-info/
 *.egg
+build/
+dist/
 
 # Testing, test discovery, and code coverage cache directories
 .pytest_cache/
@@ -39,3 +41,8 @@ override.tf.json
 *tfplan*
 .terraformrc
 terraform.rc
+
+
+## Local config 
+config.json
+test_config.json

@@ -1,6 +1,7 @@
 """Unit tests for providers/gcp_provider.py."""
 
 import logging
+
 from core.rollback import RollbackManager
 from providers.gcp_provider import GcpProvider
 
@@ -53,4 +54,3 @@ def test_build_bap_connector_payload_ingestion():
   assert payload["connectorModes"] == ["DATA_CONNECTOR"]
   assert payload["aclEnabled"] is True
   assert "enabledActions" not in payload["bapConfig"]
-

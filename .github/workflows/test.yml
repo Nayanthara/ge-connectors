@@ -1,4 +1,4 @@
-name: Terraform Tests
+name: CI, Lint & Tests
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
       - main
       - sachinss-microsoft
     paths:
+      - '**.py'
+      - 'pyproject.toml'
+      - '.flake8'
       - 'terraform_templates/**'
       - '.github/workflows/test.yml'
   pull_request:
@@ -13,6 +16,9 @@ on:
       - main
       - sachinss-microsoft
     paths:
+      - '**.py'
+      - 'pyproject.toml'
+      - '.flake8'
       - 'terraform_templates/**'
       - '.github/workflows/test.yml'
   workflow_dispatch:
@@ -21,30 +27,86 @@ permissions:
   contents: read
 
 jobs:
-  terraform:
-    name: Validate and Test Terraform
+  lint-python:
+    name: Lint Python
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Python Linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff flake8
+
+      - name: Run Ruff Linter
+        run: ruff check . --output-format=github
+
+      - name: Run Flake8 Linter
+        run: flake8 . --exclude=.venv --count --show-source --statistics
+
+  lint-terraform:
+    name: Lint Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ~> 1.10.0
 
       - name: Terraform Format Check
         run: terraform fmt -check -diff -recursive terraform_templates/
 
-      - name: Terraform Init
-        working-directory: terraform_templates/entra-connector
-        run: terraform init -backend=false
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
 
-      - name: Terraform Validate
-        working-directory: terraform_templates/entra-connector
-        run: terraform validate
+      - name: Init TFLint
+        run: tflint --init
 
-      - name: Terraform Test
+      - name: Run TFLint
+        run: tflint --recursive
+
+  terraform-test:
+    name: Validate and Test Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ~> 1.10.0
+
+      - name: Terraform Init & Validate (entra-connector)
         working-directory: terraform_templates/entra-connector
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Test (entra-connector)
+        working-directory: terraform_templates/entra-connector
+        run: terraform test
+
+      - name: Terraform Init & Validate (azure-entra-app)
+        working-directory: terraform_templates/azure-entra-app
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Test (azure-entra-app)
+        working-directory: terraform_templates/azure-entra-app
         run: terraform test
