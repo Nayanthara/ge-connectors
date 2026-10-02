@@ -15,6 +15,24 @@ variable "gcp_region" {
   default     = "us-central1"
 }
 
+variable "connector_mode" {
+  type        = string
+  description = "Connector mode: FEDERATED (default) or DATA_INGESTION."
+  default     = "FEDERATED"
+}
+
+variable "action_access_level" {
+  type        = string
+  description = "Action access tier: READ_WRITE (default) or READ_ONLY."
+  default     = "READ_WRITE"
+}
+
+variable "o365_env" {
+  type        = string
+  description = "Microsoft 365 cloud environment (com or us)."
+  default     = "com"
+}
+
 variable "entra_tenant_id" {
   type        = string
   description = "The Microsoft Entra ID (Azure AD) Directory / Tenant ID."
@@ -28,7 +46,7 @@ variable "instance_uri" {
 variable "datastore_id" {
   type        = string
   description = "The Discovery Engine Data Store ID to create."
-  default     = "sharepoint-federated-ds"
+  default     = "sharepoint-ds"
 }
 
 variable "engine_id" {
@@ -48,3 +66,4 @@ variable "existing_client_id" {
   description = "Optional existing Microsoft Entra ID App Client ID. If omitted, a new App Registration is created."
   default     = null
 }
+

@@ -1,10 +1,30 @@
 {
   "gcp_project": "my-gcp-project-id",
   "location": "global",
-  "instance_uri": "https://my.sharepoint.com",
   "entra_tenant_id": "00000000-0000-0000-0000-000000000000",
+  "engine_id": "ge-m365-app",
   "existing_client_id": null,
   "cmek_kms_key": null,
-  "engine_id": "my-gemini-engine-id",
-  "datastore_id": "sharepoint-federated-ds"
+  "mode": "FEDERATED",
+  "access_level": "READ_WRITE",
+  "o365_env": "com",
+  "sharepoint": {
+    "instance_uri": "https://acme.sharepoint.com",
+    "datastore_id": "sharepoint-ds"
+  },
+  "onedrive": {
+    "instance_uri": "https://acme-my.sharepoint.com",
+    "datastore_id": "onedrive-ds"
+  },
+  "outlook": {
+    "datastore_id": "outlook-ds"
+  },
+  "teams": {
+    "tenant_domain": "acme.onmicrosoft.com",
+    "datastore_id": "teams-ds"
+  },
+  "custom_mcp": {
+    "mcp_url": "https://my-service-12345.us-central1.run.app/mcp",
+    "datastore_id": "ms-custom-mcp-connector"
+  }
 }
