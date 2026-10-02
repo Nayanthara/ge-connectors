@@ -1,9 +1,9 @@
-# Terraform Deployment for Gemini Enterprise 3P Connector
+# Terraform Deployment for Gemini Enterprise Teams Connector
 
 This Terraform configuration automates the provisioning of:
-1. Microsoft Entra ID (Azure AD) App Registration, delegated SharePoint permissions, and Client Secret.
-2. Google Cloud Platform (GCP) APIs and Secret Manager for OAuth secrets.
-3. Gemini Enterprise (Discovery Engine) SharePoint Online Federated Search Data Store.
+1. Microsoft Entra ID (Azure AD) App Registration, delegated and application Microsoft Graph permissions for Microsoft Teams (`ChannelMessage.Send`, `ChannelMessage.Read.All`, `ChatMessage.Send`, `Chat.Read`, `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `User.Read`), and Client Secret.
+2. Google Cloud Platform (GCP) APIs and Secret Manager for OAuth secrets with CMEK support.
+3. Gemini Enterprise (Discovery Engine) Microsoft Teams Federated Search / Data Connector Data Store.
 
 ## Prerequisites
 - **Terraform CLI** >= 1.5.0
@@ -12,7 +12,7 @@ This Terraform configuration automates the provisioning of:
 
 ## Deployment Steps
 
-1. Review and adjust `terraform.tfvars` if needed.
+1. Review and adjust `terraform.tfvars` (or copy from `terraform.tfvars.tpl` if needed).
 2. Initialize Terraform:
    ```bash
    terraform init

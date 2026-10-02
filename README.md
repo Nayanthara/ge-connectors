@@ -9,16 +9,17 @@ The tool provides an interactive terminal wizard, non-interactive JSON configura
 ## Table of Contents
 1. [Architecture & Package Structure](#1-architecture--package-structure)
 2. [Supported Connectors & Architectural Modes](#2-supported-connectors--architectural-modes)
-3. [User Guide: Step-by-Step Provisioning & Workflows](#3-user-guide-step-by-step-provisioning--workflows)
+3. [Prerequisites & Environment Setup](#3-prerequisites--environment-setup)
+4. [User Guide: Step-by-Step Provisioning & Workflows](#4-user-guide-step-by-step-provisioning--workflows)
    - [Workflow A: Interactive Terminal Wizard (Quickstart)](#workflow-a-interactive-terminal-wizard-quickstart)
    - [Workflow B: Scripted / Non-Interactive Automation](#workflow-b-scripted--non-interactive-automation)
    - [Workflow C: Dry-Run / Change Plan Simulation](#workflow-c-dry-run--change-plan-simulation)
    - [Workflow D: Terraform Infrastructure as Code (IaC) Export](#workflow-d-terraform-infrastructure-as-code-iac-export)
    - [Post-Setup: Admin Consent & Gemini Enterprise Authorization](#post-setup-admin-consent--gemini-enterprise-authorization)
-4. [CLI Command-Line Flag Reference](#4-cli-command-line-flag-reference)
-5. [Configuration File Specification (`config_template.json`)](#5-configuration-file-specification-config_templatejson)
-6. [Enterprise Security & Resilience](#6-enterprise-security--resilience)
-7. [Testing & Quality Gates](#7-testing--quality-gates)
+5. [CLI Command-Line Flag Reference](#5-cli-command-line-flag-reference)
+6. [Configuration File Specification (`config_template.json`)](#6-configuration-file-specification-config_templatejson)
+7. [Enterprise Security & Resilience](#7-enterprise-security--resilience)
+8. [Testing & Quality Gates](#8-testing--quality-gates)
 
 ---
 
@@ -28,9 +29,11 @@ The tool provides an interactive terminal wizard, non-interactive JSON configura
 ge-connectors/
 ├── ge_connector_tool.py             # Main CLI Entry Point & Multi-Connector Orchestrator
 ├── config_template.json             # Multi-connector configuration schema and template
-├── README.md                        # Package Documentation & User Guide
+├── pyproject.toml                   # Project packaging, entry points, tool configs (ruff, pytest)
+├── AGENTS.md                        # Operational rules, virtual environment, and testing standards
+├── README.md                        # Main documentation and user guide
 ├── core/
-│   ├── catalog.py                   # 61 BAP Actions, Entra ID Least-Privilege Matrix, 33 Engine Features
+│   ├── catalog.py                   # 61 BAP Actions, Entra ID Least-Privilege Matrix, 36 Engine Features
 │   ├── logger.py                    # Redacting logger (scrubs secrets, bearer tokens, passwords)
 │   ├── rollback.py                  # Stack-based LIFO Rollback Manager (SIGINT/SIGTERM/Exception)
 │   ├── preflight.py                 # Non-destructive Pre-flight Validation Engine
@@ -50,8 +53,9 @@ ge-connectors/
 │   ├── outlook/                     # Outlook HCL Module
 │   ├── teams/                       # Teams HCL Module
 │   ├── custom_mcp/                  # Custom MCP HCL Module
+│   ├── azure-entra-app/             # Standalone Microsoft Entra ID App Registration Module
 │   └── entra-connector/             # Entra People Data Connector Module
-└── tests/                           # Complete Pytest Automated Test Suite
+└── tests/                           # Pytest Automated Test Suite (17 tests)
     ├── test_catalog.py              # Tests for actions catalog, scopes, and Engine feature polarity
     ├── test_entra_provider.py       # Tests for requiredResourceAccess payload construction
     ├── test_gcp_provider.py         # Tests for universal BAP connector payload and Engine features
@@ -76,20 +80,36 @@ ge-connectors/
 ### Dual Architectural Modes
 
 1. **`FEDERATED` (Default)**:
-   - **Real-Time Federated Search & BAP Tool Actions**: `connectorModes = ["FEDERATED", "ACTIONS"]` with `bapConfig.enabledActions`.
+   - **Real-Time Federated Search & BAP Tool Actions**: Configures `connectorModes = ["FEDERATED", "ACTIONS"]` with `bapConfig.enabledActions`.
    - Allows Gemini Enterprise agents (Agent Builder / Dolphin Runtime) to query live third-party APIs and execute real actions (send emails, create calendar events, upload files, post Teams messages) using end-user delegated OAuth (`3LO`) credentials.
-   - Access tier control via `--access-level`: `READ_WRITE` (all 61 tools) or `READ_ONLY` (read-only search tools).
+   - Access tier control via `--access-level`: `READ_WRITE` (all 61 tools) or `READ_ONLY` (search and read tools only).
 
 2. **`DATA_INGESTION`**:
-   - **Batch Document Indexing**: `connectorModes = ["DATA_CONNECTOR"]` with `aclEnabled = true`.
+   - **Batch Document Indexing**: Configures `connectorModes = ["DATA_CONNECTOR"]` with `aclEnabled = true`.
    - Performs periodic batch crawling of documents and metadata directly into Discovery Engine search index with full Microsoft Entra ID ACL security trimming.
+   - Supported for `sharepoint`, `onedrive`, `outlook`, and `teams`. (Note: `custom_mcp` operates exclusively in `FEDERATED` mode).
 
 ---
 
-## 3. User Guide: Step-by-Step Provisioning & Workflows
+## 3. Prerequisites & Environment Setup
 
-### Prerequisites Setup
+Before running the tool, verify that the environment meets the following requirements:
 
+### A. Python Environment (`.venv`)
+* **Python >= 3.10**
+* Always use the dedicated virtual environment located at `.venv/` at the repository root:
+  ```bash
+  # 1. Create virtual environment (if not already created)
+  python3 -m venv .venv
+
+  # 2. Activate and install dependencies in editable mode
+  source .venv/bin/activate
+  pip install --upgrade pip
+  pip install -e ".[dev]"
+  ```
+* Commands can be run either by activating the virtual environment (`source .venv/bin/activate && python ...`) or via direct path invocation (`.venv/bin/python ...`).
+
+### B. Cloud CLIs & Authentication
 1. **Google Cloud SDK (`gcloud`)**:
    Authenticate your active Google Cloud session and configure your target project:
    ```bash
@@ -97,68 +117,56 @@ ge-connectors/
    gcloud auth application-default login
    gcloud config set project YOUR_GCP_PROJECT_ID
    ```
-   *Required IAM Roles*: `roles/discoveryengine.admin`, `roles/secretmanager.admin`, and `roles/serviceusage.serviceUsageAdmin`.
+   *Required IAM Roles*:
+   - `roles/discoveryengine.admin` (Discovery Engine Admin)
+   - `roles/secretmanager.admin` (Secret Manager Admin)
+   - `roles/serviceusage.serviceUsageAdmin` (Service Usage Admin)
 
-2. **Azure CLI (`az`)**:
+2. **Microsoft Azure CLI (`az`)**:
    Authenticate to Microsoft Entra ID without requiring Azure billing subscriptions:
    ```bash
    az login --use-device-code --allow-no-subscriptions
    ```
-   *Required Entra ID Role*: `Cloud Application Administrator` (minimum) or `Global Administrator` (for automated background admin consent).
+   *Required Entra ID Role*:
+   - `Cloud Application Administrator` (minimum, for App & Secret creation)
+   - `Global Administrator` (optional, enables automatic tenant-wide Admin Consent execution)
+
+3. **Terraform CLI (`>= 1.5.0`)**:
+   Required when deploying or running tests against generated Terraform HCL templates.
 
 ---
 
-### Workflow A: Interactive Terminal Wizard (Quickstart)
+## 4. User Guide: Step-by-Step Provisioning & Workflows
 
-If run without arguments (or with `--interactive`), the tool guides you step-by-step with color-coded prompts, input validation, auto-detection of your current environment, and pre-selected intelligent defaults.
+<details open>
+<summary><b id="workflow-a-interactive-terminal-wizard-quickstart">Workflow A: Interactive Terminal Wizard (Quickstart)</b></summary>
+
+If run without arguments (or with `--interactive`), the tool guides you step-by-step with color-coded prompts, input validation, auto-detection of your current environment, and pre-selected intelligent defaults:
 
 1. Launch the interactive wizard:
    ```bash
-   python3 ge_connector_tool.py
+   .venv/bin/python ge_connector_tool.py
    ```
-2. **Select Connectors**: Choose one or multiple connectors (e.g., `sharepoint`, `onedrive`, `outlook`, `teams`, or `all`).
+   *(or with an activated virtual environment: `python ge_connector_tool.py`)*
+
+2. **Select Connectors**: Choose one or multiple connectors (e.g., `sharepoint`, `onedrive`, `outlook`, `teams`, `custom_mcp`, or `all`).
 3. **Select Architecture Mode**: Choose `FEDERATED` (real-time query + actions) or `DATA_INGESTION` (batch crawl + ACLs).
-4. **Choose Action Access Tier**: Choose `READ_WRITE` to enable write tools or `READ_ONLY` for search-only.
+4. **Choose Action Access Tier**: Choose `READ_WRITE` to enable write tools or `READ_ONLY` for search-only tools.
 5. **Confirm Cloud Environment**: Select standard Commercial (`com`) or US Government / GCC High (`us`).
 6. **Entra ID App Registration**: The wizard detects whether an app registration exists or creates a new one, generates a 2-year client secret, and sets up least-privilege Graph and SharePoint API permissions.
 7. **Secret Vaulting**: The client secret is automatically vaulted in Google Cloud Secret Manager with metadata tags (`expiration_date`, `alert_before_days=30`, `created_by=ge_connector_tool`).
 8. **Discovery Engine & Engine Linkage**: The tool constructs the BAP payload, initializes the Data Store, and binds it to your Gemini Enterprise Engine.
-## 2. Prerequisites
 
-Before running the tool, verify that the environment meets the following
-requirements:
+</details>
 
-### A. Binaries & Environment
-* Recommended: **Google Cloud Shell** (`shell.cloud.google.com`).
-* Local Terminal Requirements:
-  * **Python 3.8+**
-  * **Google Cloud SDK (`gcloud`)**: Authenticated via `gcloud auth login`.
-  * **Azure CLI (`az`)**: Authenticated via `az login`.
-  * **Terraform CLI (`>= 1.5.0`)**: required when applying generated Terraform files.
-
-> [!NOTE]
-> **Azure CLI (`az`)** is required for Microsoft connector setup to automate Microsoft Entra ID (Azure AD) application registration, API permissions, and credential management.
-
-### B. Access & Permissions
-* **Google Cloud Project**:
-  * `roles/discoveryengine.admin` (Discovery Engine Admin)
-  * `roles/secretmanager.admin` (Secret Manager Admin)
-  * `roles/serviceusage.serviceUsageAdmin` (Service Usage Admin)
-  * `roles/iam.workforcePoolAdmin` (Workforce Identity Pool Admin)
-* **Microsoft Entra ID (Azure AD)**:
-  * Minimum: `Cloud Application Administrator` (App & Secret creation).
-  * Optional: `Global Administrator` (Enables automatic tenant-wide Admin
-    Consent execution).
-
----
-
-### Workflow B: Scripted / Non-Interactive Automation
+<details>
+<summary><b id="workflow-b-scripted--non-interactive-automation">Workflow B: Scripted / Non-Interactive Automation</b></summary>
 
 For CI/CD pipelines or hands-free execution, pass all parameters via CLI flags or a JSON configuration file.
 
 #### Example 1: CLI Flags (Multi-Connector Provisioning)
 ```bash
-python3 ge_connector_tool.py \
+.venv/bin/python ge_connector_tool.py \
   --connector sharepoint,onedrive,outlook,teams \
   --mode FEDERATED \
   --access-level READ_WRITE \
@@ -169,62 +177,42 @@ python3 ge_connector_tool.py \
 ```
 
 #### Example 2: Config File (`config_template.json`)
-Create or edit `config_template.json`:
-```json
-{
-  "gcp_project": "my-gcp-project",
-  "location": "global",
-  "entra_tenant_id": "00000000-0000-0000-0000-000000000000",
-  "engine_id": "ge-m365-app",
-  "mode": "FEDERATED",
-  "access_level": "READ_WRITE",
-  "o365_env": "com",
-  "sharepoint": {
-    "instance_uri": "https://acme.sharepoint.com",
-    "datastore_id": "sharepoint-ds"
-  },
-  "onedrive": {
-    "instance_uri": "https://acme-my.sharepoint.com",
-    "datastore_id": "onedrive-ds"
-  },
-  "outlook": {
-    "datastore_id": "outlook-ds"
-  },
-  "teams": {
-    "tenant_domain": "acme.onmicrosoft.com",
-    "datastore_id": "teams-ds"
-  }
-}
-```
-Run the tool non-interactively:
+Run using a populated configuration file:
 ```bash
-python3 ge_connector_tool.py --connector sharepoint,onedrive,outlook,teams --config config_template.json
+.venv/bin/python ge_connector_tool.py \
+  --connector sharepoint,onedrive,outlook,teams \
+  --config config_template.json
 ```
 
----
+</details>
 
-### Workflow C: Dry-Run / Change Plan Simulation
+<details>
+<summary><b id="workflow-c-dry-run--change-plan-simulation">Workflow C: Dry-Run / Change Plan Simulation</b></summary>
 
 Before making changes in production or customer environments, use `--dry-run` to simulate execution, validate permissions, and preview exact resource mutations without modifying cloud state:
 
 ```bash
-python3 ge_connector_tool.py --connector sharepoint,onedrive,outlook,teams --config config_template.json --dry-run
+.venv/bin/python ge_connector_tool.py \
+  --connector sharepoint,onedrive,outlook,teams \
+  --config config_template.json \
+  --dry-run
 ```
 
-The tool will output a detailed change plan showing:
+The tool outputs a detailed change plan showing:
 - Active connector mode and BAP tool action count.
 - Entra ID app registration plan and required permissions.
 - Secret Manager secret ID and CMEK KMS key configuration.
 - Target Discovery Engine Data Store ID and Engine binding target.
 
----
+</details>
 
-### Workflow D: Terraform Infrastructure as Code (IaC) Export
+<details>
+<summary><b id="workflow-d-terraform-infrastructure-as-code-iac-export">Workflow D: Terraform Infrastructure as Code (IaC) Export</b></summary>
 
 To provision connectors via Terraform, use the `--terraform` flag. The tool translates your inputs into validated, production-ready Terraform HCL code without touching cloud resources:
 
 ```bash
-python3 ge_connector_tool.py \
+.venv/bin/python ge_connector_tool.py \
   --connector sharepoint,onedrive,outlook,teams,custom_mcp \
   --config config_template.json \
   --terraform \
@@ -246,6 +234,8 @@ terraform plan
 terraform apply
 ```
 
+</details>
+
 ---
 
 ### Post-Setup: Admin Consent & Gemini Enterprise Authorization
@@ -254,7 +244,7 @@ Once provisioning completes, the tool prints post-setup guidance:
 
 #### 1. Tenant-Wide Admin Consent
 - **Global Administrator Session**: Tenant-wide admin consent is automatically granted in the background via Microsoft Graph API.
-- **Cloud Application Administrator Session**: If automated consent is skipped due to insufficient directory privileges, an admin can approve permissions directly in the Microsoft Entra Admin Center:
+- **Cloud Application Administrator Session**: If automated consent is skipped due to insufficient directory privileges, an administrator can approve permissions directly in the Microsoft Entra Admin Center:
   1. Open: `https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/<CLIENT_ID>`
   2. Click **"Grant admin consent for <tenant>"**.
   3. Confirm that green check marks appear next to the requested scopes.
@@ -270,15 +260,15 @@ To complete the end-user OAuth handshake:
 
 ---
 
-## 4. CLI Command-Line Flag Reference
+## 5. CLI Command-Line Flag Reference
 
 | Flag | Short | Default | Description |
 | :--- | :---: | :--- | :--- |
-| `--connector` | `-c` | `sharepoint` | Target connector(s): `sharepoint`, `onedrive`, `outlook`, `teams`, `custom_mcp`, `all`, or comma-separated list. |
-| `--mode` | `-m` | `FEDERATED` | Architectural mode: `FEDERATED` (real-time query + actions) or `DATA_INGESTION` (batch crawl + ACLs). |
+| `--connector` | | `sharepoint` | Target connector(s): `sharepoint`, `onedrive`, `outlook`, `teams`, `custom_mcp`, `all`, or comma-separated list. |
+| `--mode` | | `FEDERATED` | Architectural mode: `FEDERATED` (real-time query + actions) or `DATA_INGESTION` (batch crawl + ACLs). |
 | `--access-level` | | `READ_WRITE` | Action tool permission tier: `READ_WRITE` (all supported tools) or `READ_ONLY` (search tools only). |
-| `--engine-features` | | `RECOMMENDED` | Gemini Enterprise Engine features: `RECOMMENDED` (standard apps), `ALL` (all 33 features), or comma-separated keys. |
-| `--engine-id` | `-e` | `""` | Gemini Enterprise App/Engine ID to bind the Data Store to. |
+| `--engine-features` | | `RECOMMENDED` | Gemini Enterprise Engine features: `RECOMMENDED`, `ALL` (all 36 features), or comma-separated keys. |
+| `--engine-id` | | `""` | Gemini Enterprise App/Engine ID to bind the Data Store to. |
 | `--o365-env` | | `com` | Microsoft 365 cloud environment TLD suffix: `com` (Commercial), `us` (GCC High), or custom. |
 | `--project` | `-p` | Active gcloud | Google Cloud Project ID override. |
 | `--location` | `-l` | `global` | Discovery Engine location (`global`, `us`, `eu`). |
@@ -287,13 +277,17 @@ To complete the end-user OAuth handshake:
 | `--mcp-url` | | `""` | Custom MCP Server URL (required for `custom_mcp` connector). |
 | `--config` | | `""` | Path to JSON configuration file for non-interactive execution. |
 | `--dry-run` | | `False` | Simulates execution, validates configuration, and renders change plan. |
+| `--interactive` | | `True` | Run interactive wizard prompts (default: `True` unless `--config` is supplied). |
 | `--terraform` | | `False` | Generates Terraform HCL configuration files instead of directly provisioning. |
 | `--output-dir` | | `terraform_output` | Target directory for generated Terraform files. |
 | `--verbose` | | `False` | Enables detailed `DEBUG` logging output in console. |
+| `--help` | `-h` | | Show help message and exit. |
 
 ---
 
-## 5. Configuration File Specification (`config_template.json`)
+## 6. Configuration File Specification (`config_template.json`)
+
+The configuration file allows parameterizing multiple connectors in a single non-interactive execution:
 
 ```json
 {
@@ -328,9 +322,22 @@ To complete the end-user OAuth handshake:
 }
 ```
 
+### Configuration Fields
+
+* `gcp_project`: Target Google Cloud Project ID.
+* `location`: Discovery Engine location (`global`, `us`, `eu`).
+* `entra_tenant_id`: Microsoft Entra ID tenant GUID.
+* `engine_id`: Optional Gemini Enterprise Engine ID to link Data Stores.
+* `existing_client_id`: Optional existing Entra ID App Client ID to reuse credentials.
+* `cmek_kms_key`: Optional Cloud KMS CryptoKey resource name for Secret Manager encryption.
+* `mode`: `FEDERATED` or `DATA_INGESTION`.
+* `access_level`: `READ_WRITE` or `READ_ONLY`.
+* `o365_env`: Microsoft 365 cloud environment TLD suffix (`com` or `us`).
+* Per-connector objects (`sharepoint`, `onedrive`, `outlook`, `teams`, `custom_mcp`): define connector-specific parameters such as `instance_uri`, `tenant_domain`, `mcp_url`, and custom `datastore_id`.
+
 ---
 
-## 6. Enterprise Security & Resilience
+## 7. Enterprise Security & Resilience
 
 1. **Zero-Trust Secret Management**:
    - Client Secrets are never saved to plaintext files on disk.
@@ -346,22 +353,56 @@ To complete the end-user OAuth handshake:
    - The `RedactingFormatter` automatically scrubs Bearer tokens, OAuth client secrets, passwords, and sensitive HTTP headers before writing to stdout or the `ge_connector_setup.log` audit log.
 
 4. **Engine Feature Polarity Management (`core/catalog.py`)**:
-   - Manages 33 Gemini Enterprise feature flags with polarity awareness. Flags with negative/inverted keys (`disable-canvas`, `disable-multi-agent-orchestration`, `disable-onedrive-upload`) are properly inverted so that enabling them in the configuration translates to `FEATURE_STATE_OFF` in the API payload.
+   - Manages 36 Gemini Enterprise feature flags with polarity awareness across 4 categories:
+     - **Agents**: Agent gallery, chat agents, workflow agents, multi-agent orchestration, skills, and project workspaces.
+     - **Content & Integrations**: NotebookLM, Canvas editor, OneDrive/Drive uploads, and grounded Q&A.
+     - **Models & Media Generation**: Model selector dropdown, Imagen image generation, and Veo video generation.
+     - **Platform, Voice & Personalization**: User memory, suggested prompt cards, people search & org chart, in-app notifications, mobile access, speech-to-text, and Gemini Live bi-directional audio.
+   - Flags with negative/inverted keys (`disable-canvas`, `disable-multi-agent-orchestration`, `disable-onedrive-upload`, etc.) are properly inverted so that enabling them in the configuration translates to `FEATURE_STATE_OFF` in the API payload.
 
 ---
 
-## 7. Testing & Quality Gates
+## 8. Testing & Quality Gates
 
-The repository contains an automated test suite verifying catalog definitions, provider payload generation, plugin lifecycle methods, and Terraform template substitution.
+The repository contains automated unit and integration tests along with linting configurations to maintain code quality across Python and Terraform codebases.
 
-To run the complete test suite:
+### Running Python Tests
+Always use the authoritative virtual environment:
 ```bash
-python3 -m pytest tests/ -v
+# Run complete test suite
+.venv/bin/pytest
+
+# Run tests with verbose output
+.venv/bin/pytest -v
+
+# Run specific test file
+.venv/bin/pytest tests/test_catalog.py
 ```
 
-### Test Coverage Summary:
-- `tests/test_catalog.py`: Verifies all 61 BAP actions, least-privilege permission matrix, and Engine feature flag polarity.
+### Running Linters
+```bash
+# Ruff linter
+.venv/bin/ruff check .
+
+# Flake8 style checker
+.venv/bin/flake8 . --exclude=.venv
+```
+
+### Running Terraform Tests & Validation
+```bash
+# Check formatting across all templates
+terraform fmt -check -diff -recursive terraform_templates/
+
+# Run Entra connector tests
+terraform -chdir=terraform_templates/entra-connector test
+
+# Run Azure Entra App tests
+terraform -chdir=terraform_templates/azure-entra-app test
+```
+
+### Test Suite Summary (17 Tests)
+- `tests/test_catalog.py`: Verifies 61 BAP actions, least-privilege permission matrix, and Engine feature flag polarity.
 - `tests/test_entra_provider.py`: Verifies Microsoft Graph and SharePoint `requiredResourceAccess` payload formatting.
 - `tests/test_gcp_provider.py`: Verifies BAP `setUpDataConnector` JSON structure in both `FEDERATED` and `DATA_INGESTION` modes.
-- `tests/test_plugins.py`: Verifies input validation and dry-run execution for all 5 plugins.
+- `tests/test_plugins.py`: Verifies input validation and dry-run execution for all 5 plugins (`sharepoint`, `onedrive`, `outlook`, `teams`, `custom_mcp`).
 - `tests/test_terraform_generation.py`: Verifies that all 5 Terraform connector templates render cleanly with zero unresolved tokens.
