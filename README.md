@@ -138,7 +138,8 @@ Before running the tool, verify that the environment meets the following require
 
 ## 4. User Guide: Step-by-Step Provisioning & Workflows
 
-### Workflow A: Interactive Terminal Wizard (Quickstart)
+<details open>
+<summary><b id="workflow-a-interactive-terminal-wizard-quickstart">Workflow A: Interactive Terminal Wizard (Quickstart)</b></summary>
 
 If run without arguments (or with `--interactive`), the tool guides you step-by-step with color-coded prompts, input validation, auto-detection of your current environment, and pre-selected intelligent defaults:
 
@@ -156,9 +157,10 @@ If run without arguments (or with `--interactive`), the tool guides you step-by-
 7. **Secret Vaulting**: The client secret is automatically vaulted in Google Cloud Secret Manager with metadata tags (`expiration_date`, `alert_before_days=30`, `created_by=ge_connector_tool`).
 8. **Discovery Engine & Engine Linkage**: The tool constructs the BAP payload, initializes the Data Store, and binds it to your Gemini Enterprise Engine.
 
----
+</details>
 
-### Workflow B: Scripted / Non-Interactive Automation
+<details>
+<summary><b id="workflow-b-scripted--non-interactive-automation">Workflow B: Scripted / Non-Interactive Automation</b></summary>
 
 For CI/CD pipelines or hands-free execution, pass all parameters via CLI flags or a JSON configuration file.
 
@@ -182,9 +184,10 @@ Run using a populated configuration file:
   --config config_template.json
 ```
 
----
+</details>
 
-### Workflow C: Dry-Run / Change Plan Simulation
+<details>
+<summary><b id="workflow-c-dry-run--change-plan-simulation">Workflow C: Dry-Run / Change Plan Simulation</b></summary>
 
 Before making changes in production or customer environments, use `--dry-run` to simulate execution, validate permissions, and preview exact resource mutations without modifying cloud state:
 
@@ -201,9 +204,10 @@ The tool outputs a detailed change plan showing:
 - Secret Manager secret ID and CMEK KMS key configuration.
 - Target Discovery Engine Data Store ID and Engine binding target.
 
----
+</details>
 
-### Workflow D: Terraform Infrastructure as Code (IaC) Export
+<details>
+<summary><b id="workflow-d-terraform-infrastructure-as-code-iac-export">Workflow D: Terraform Infrastructure as Code (IaC) Export</b></summary>
 
 To provision connectors via Terraform, use the `--terraform` flag. The tool translates your inputs into validated, production-ready Terraform HCL code without touching cloud resources:
 
@@ -229,6 +233,8 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+</details>
 
 ---
 
